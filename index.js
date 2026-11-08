@@ -271,13 +271,29 @@ function startJob(config, argv, label) {
   return meta
 }
 
+function sanitise(value) {
+  if (value === null || value === undefined) return null
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null
+  if (typeof value === 'string' || typeof value === 'boolean') return value
+  if (Array.isArray(value)) return value.map(sanitise)
+  if (typeof value === 'object') {
+    const out = {}
+    for (const [key, item] of Object.entries(value)) {
+      if (item === undefined) continue
+      out[key] = sanitise(item)
+    }
+    return out
+  }
+  return null
+}
+
 function readProgress(file) {
   if (!file) return null
   try {
     if (!fs.existsSync(file)) return null
     const raw = fs.readFileSync(file, 'utf8')
     if (!raw.trim()) return null
-    return JSON.parse(raw)
+    return sanitise(JSON.parse(raw))
   } catch {
     return null
   }
@@ -309,7 +325,7 @@ function readJob(config, id) {
     ...meta,
     alive,
     log: log.split('\n').slice(-40).join('\n'),
-    result,
+    result: result === undefined ? null : sanitise(result),
     snapshot: readProgress(meta.progress),
   }
 }
@@ -319,16 +335,16 @@ function listJobs(config) {
   if (!fs.existsSync(dir)) return []
   return fs
     .readdirSync(dir)
-    .filter((file) => file.endsWith('.json'))
+    .filter((file) => file.startsWith('job_') && file.endsWith('.json') && !file.endsWith('.progress.json'))
     .map((file) => {
       const meta = JSON.parse(fs.readFileSync(path.join(dir, file), 'utf8'))
       let alive = false
       try { process.kill(meta.pid, 0); alive = true } catch { alive = false }
       return {
-        id: meta.id,
-        label: meta.label,
-        pid: meta.pid,
-        startedAt: meta.startedAt,
+        id: String(meta.id || ''),
+        label: String(meta.label || ''),
+        pid: Number(meta.pid || 0),
+        startedAt: String(meta.startedAt || ''),
         alive,
         snapshot: readProgress(meta.progress),
       }

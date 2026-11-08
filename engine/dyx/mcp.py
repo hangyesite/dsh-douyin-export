@@ -98,6 +98,20 @@ TOOLS = [
         },
     },
     {
+        "name": "douyin_polish",
+        "description": "AI 术语校对：抽样让独立 chat 模型挑同音错字，生成「错→对」候选；采纳后只改导出文本，不重跑转写。action=show 看术语表，sample 挖候选，accept 采纳（pairs: [\"错=>正\"]），apply 按现有术语表刷一遍，reset 撤销。",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "action": {"type": "string", "description": "show / sample / accept / apply / reset"},
+                "author": {"type": "string"},
+                "ids": {"type": "array", "items": {"type": "string"}},
+                "sample": {"type": "integer", "description": "抽样条数（sample 时用）"},
+                "pairs": {"type": "array", "items": {"type": "string"}, "description": "accept 时的「错=>正」列表"},
+            },
+        },
+    },
+    {
         "name": "douyin_library",
         "description": "查看本地库：统计、作者列表或作品清单。",
         "inputSchema": {
@@ -194,6 +208,29 @@ def _build_argv(name: str, args: dict) -> list:
             argv += ["--full"]
         if args.get("download"):
             argv += ["--download"]
+        return argv
+
+    if name == "douyin_polish":
+        argv = ["polish"]
+        if args.get("author"):
+            argv += ["--author", str(args["author"])]
+        if args.get("ids"):
+            argv += ["--ids", *[str(i) for i in args["ids"]]]
+        action = str(args.get("action") or "show")
+        if action == "sample":
+            argv += ["--sample", str(int(args.get("sample") or 15)), "--no-apply"]
+        elif action == "accept":
+            pairs = args.get("pairs") or []
+            if pairs:
+                argv += ["--accept", *[str(p) for p in pairs]]
+            else:
+                argv += ["--show"]
+        elif action == "apply":
+            argv += ["--apply-only"]
+        elif action == "reset":
+            argv += ["--reset"]
+        else:
+            argv += ["--show"]
         return argv
 
     if name == "douyin_download":

@@ -11,7 +11,7 @@
  * 所有请求都是同源相对路径 /api/douyin/*，由 Host 侧 server.js 提供。
  */
 window.__ModuleLoader__.load({
-  id: '@local/douyin-export',
+  id: 'dsh-douyin-export',
   factory(require) {
     const React = require('react')
     const h = React.createElement
@@ -714,6 +714,9 @@ async function api(path, options) {
               method: 'POST',
               body: JSON.stringify(extra || body()),
             })
+            if (!result || (result.ok === false && result.error)) {
+              setMsg('失败：' + String(result.error || '未知错误'))
+            }
             if (result && result.ok) {
               if (result.terms) setTerms(result.terms)
               const mine = result.mine
@@ -726,6 +729,11 @@ async function api(path, options) {
                 setMsg(`已在「${scopeText}」应用：${(result.apply && result.apply.changed) || 0} 条有改动`)
               } else if (action === 'reset') {
                 setMsg(`已撤销：${result.reset || 0} 条回到原始转写`)
+              } else if (action === 'accept-local') {
+                setMsg(
+                  `只改这处：影响 ${result.videos || 0} 条，改写 ${result.changed || 0} 处`
+                    + (result.videos ? '' : '（没匹配到原句，可能已被改过）'),
+                )
               } else {
                 setMsg('已更新术语表')
               }
@@ -733,6 +741,8 @@ async function api(path, options) {
             } else {
               setMsg(String((result && result.error) || '操作失败'))
             }
+          } catch (err) {
+            setMsg('请求失败：' + String((err && err.message) || err))
           } finally {
             setBusy('')
           }

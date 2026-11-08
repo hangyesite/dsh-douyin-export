@@ -17,6 +17,7 @@ import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
+from .progress import Progress
 from .util import DyxError, log
 
 SYSTEM_PROMPT = (
@@ -261,8 +262,12 @@ def mine(cfg, store, sec_uid: str | None = None, sample: int | None = None,
         keep = {w: r for w, r in pairs.items() if w in text}
         return row, keep, {w: c for w, c in ctxs.items() if w in keep}
 
+    prog = Progress("polish", total=len(picks), unit="条", log_every=5)
+    prog.set_phase("挖术语中", f"抽样 {len(picks)} 条")
+    failed_n = 0
     with ThreadPoolExecutor(max_workers=workers) as pool:
         for row, pairs, ctxs in pool.map(_one, picks):
+            prog.bump(note=row.get("aweme_id"))
             if not pairs:
                 continue
             for wrong, right in pairs.items():
@@ -284,6 +289,7 @@ def mine(cfg, store, sec_uid: str | None = None, sample: int | None = None,
                                 key=lambda kv: (-videos.get(kv[0], 1), -counts.get(kv[0], 1)))]
     if cb:
         cb(f"术语表 +{len(terms)} 条")
+    prog.finish("候选已生成")
     return {"sampled": len(picks), "filtered": len(dropped), "calls": len(picks), "terms": terms, "failed": failed}
 
 
