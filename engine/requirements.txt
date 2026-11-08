@@ -1,0 +1,15 @@
+# 抖音导出引擎 · Python 依赖
+#
+# 安装： pip install -r requirements.txt
+# 运行需要 Python 3.10+；ffmpeg 必须单独安装（ffprobe 同目录），
+# Windows 上可把它写进配置 media.ffmpegPath。
+
+# --- 必需 ---
+numpy>=1.24            # 音频数组、ASR 输入
+playwright>=1.40       # 用系统 Chrome/Edge 取元数据（需 `playwright install chromium` 或直接用系统浏览器）
+python-docx>=1.1       # docx 导出
+
+# --- 可选：本地 ASR 引擎 ---
+# 只用云端引擎（OpenAI 兼容 / 阿里百炼 / 豆包）时不装也可以
+sherpa-onnx>=1.10      # SenseVoice 本地引擎（默认，CPU int8，自带标点）
+faster-whisper>=1.0    # faster-whisper 本地引擎（词级时间戳）

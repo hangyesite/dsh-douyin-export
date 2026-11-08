@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.3
+
+- Added `engine/requirements.txt` (core install plus optional local ASR extras) so the engine can be installed outside DSH.
+- `mcp/README.md`: setup steps, `douyin_polish` in the tool table, and a compatibility matrix explaining which form other agent frameworks can use (MCP server and CLI are framework-neutral; the Cordis plugin and `SKILL.md` are DSH-specific).
+- Both READMEs now point at `mcp/README.md` for non-DSH usage.
+
 ## 0.1.2
 
 - Fixed: the polish model choice now takes effect immediately after saving settings (the cached engine settings are invalidated on every config write).
