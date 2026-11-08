@@ -19,9 +19,10 @@ import { registerDouyinRoutes } from './server.js'
 import * as tasks from './tasks.js'
 import { registerSkills } from './skills.js'
 import { registerActionKinds } from './action-cards.js'
+import { createPolishHost } from './polish-host.js'
 
 export const name = 'douyin-export'
-export const inject = ['tools', 'skills']
+export const inject = ['tools', 'skills', 'llm']
 
 const PKG_DIR = path.dirname(fileURLToPath(import.meta.url))
 const ENGINE_DIR = path.join(PKG_DIR, 'engine')
@@ -840,7 +841,8 @@ export function apply(ctx, config = {}) {
     description:
       'AI 校对（可选能力）：抽样把转写稿交给大模型挑同音错字，生成「错→对」术语表，'
       + '再对全库做确定性替换。只改导出用的文本，原始转写照旧保留；不重写正文、不动时间戳。'
-      + '需要先在设置里配好 polish.baseUrl / polish.apiKey（chat 模型）。',
+      + '默认直接用 DSH 自己的模型（如 deepseek-v4.1-flash），不用配任何 Key；'
+      + '也可以在设置里换成别的官方模型，或填自定义 baseUrl/apiKey。',
     parameters: {
       author: { type: 'string', description: '只处理这个作者（主页链接或 sec_uid）' },
       ids: { type: 'array', items: { type: 'string' }, description: '只处理这些作品 ID' },
@@ -858,6 +860,27 @@ export function apply(ctx, config = {}) {
     },
     output: { schema: RESULT_SCHEMA, render: renderSummary },
     execute: async (args) => {
+      const mineMode = !args.show && !args.reset && !listify(args.accept).length
+        && !listify(args.acceptLocal).length && !args.applyOnly
+      if (mineMode && (await polishHost.mode()) !== 'http') {
+        const hostResult = await polishHost.mine({
+          author: args.author,
+          ids: listify(args.ids),
+          sample: args.sample,
+        })
+        const mine = hostResult.mine || {}
+        const terms = hostResult.terms || []
+        const route = hostResult.route || {}
+        const picked = Object.keys(mine.terms || {}).length
+        return {
+          ok: true,
+          summary: `用 DSH 的模型（${route.provider || '?'} / ${route.model || '?'}）校对：抽样 `
+            + `${mine.sampled ?? 0} 条，挑出 ${picked} 个错词；现有术语表 ${terms.length} 条。`
+            + `候选要你点头才生效（全局采纳 / 只改这处 / 丢掉）。`,
+          data: hostResult,
+        }
+      }
+
       const argv = ['polish']
       if (args.author) argv.push('--author', args.author)
       const ids = listify(args.ids)
@@ -1141,6 +1164,13 @@ export function apply(ctx, config = {}) {
     },
   }))
 
+  // AI 校对默认走 DSH 自己的模型服务（无需 Key）；配了 polish.mode='http' 时改走引擎侧 HTTP
+  const polishHost = createPolishHost({
+    ctx,
+    config,
+    deps: { fs, path, home: () => resolveHome(config), runEngine },
+  })
+
   // Web GUI：/api/douyin/* 路由（没有 webServer 时自动降级为只提供工具）
   ctx.effect(() =>
     registerDouyinRoutes(ctx, {
@@ -1154,6 +1184,7 @@ export function apply(ctx, config = {}) {
       readJob,
       listJobs,
       cancelJob,
+      polishHost,
     }),
   )
 

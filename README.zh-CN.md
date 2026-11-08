@@ -146,3 +146,5 @@ python -m dyx --home ~/.dsh-douyin failures --author <sec_uid>
 ## 许可证
 
 MIT，见 [LICENSE](LICENSE)。
+
+> AI 校对默认直接使用 harness 自带的模型服务（例如 `deepseek-official / deepseek-flash`），**不需要任何 API Key**。在校对页可以选择 harness 里注册的任意模型；也可以把 `polish.mode` 改成 `http` 并填写 `baseUrl` / `apiKey` 使用自定义端点。

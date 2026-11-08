@@ -417,10 +417,17 @@ class Store:
             "SELECT wrong,right,context FROM patches WHERE aweme_id=?", (str(aweme_id),))
         return [dict(r) for r in rows.fetchall()]
 
-    def list_patches(self, limit: int = 500) -> list[dict]:
-        rows = self.conn.execute(
-            """SELECT aweme_id,wrong,right,context,source,created_at FROM patches
-               ORDER BY id DESC LIMIT ?""", (limit,))
+    def list_patches(self, sec_uid: str | None = None, limit: int = 500) -> list[dict]:
+        if sec_uid:
+            rows = self.conn.execute(
+                """SELECT p.aweme_id,p.wrong,p.right,p.context,p.source,p.created_at
+                     FROM patches p JOIN videos v ON v.aweme_id = p.aweme_id
+                    WHERE v.sec_uid = ?
+                    ORDER BY p.id DESC LIMIT ?""", (sec_uid, limit))
+        else:
+            rows = self.conn.execute(
+                """SELECT aweme_id,wrong,right,context,source,created_at FROM patches
+                   ORDER BY id DESC LIMIT ?""", (limit,))
         return [dict(r) for r in rows.fetchall()]
 
     def drop_patch(self, aweme_id: str, wrong: str) -> int:

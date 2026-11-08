@@ -226,6 +226,66 @@ def filter_candidates(store, pairs, videos=None):
     return kept, dropped
 
 
+def dump_samples(cfg, store, sec_uid: str | None = None, sample: int | None = None,
+                 ids: list[str] | None = None) -> dict:
+    """只把抽样文本吐出来，不调模型（给 Host 侧用：模型调用交给 DSH 自己的 LLM 服务）。"""
+    n = int(sample or cfg.get("polish.sampleSize") or 20)
+    max_chars = int(cfg.get("polish.maxCharsPerCall") or 6000)
+    rows = store.list_transcripts(sec_uid=sec_uid, limit=100000)
+    if ids:
+        wanted = {str(i) for i in ids}
+        rows = [r for r in rows if str(r["aweme_id"]) in wanted]
+    picks = _pick_samples(rows, n)
+    samples = []
+    for row in picks:
+        text = (row.get("raw_text") or row.get("text") or "")[:max_chars]
+        if not text.strip():
+            continue
+        samples.append({"aweme_id": str(row["aweme_id"]), "text": text})
+    return {"sampled": len(samples), "samples": samples,
+            "system": SYSTEM_PROMPT, "userTemplate": USER_TEMPLATE}
+
+
+def ingest_replies(cfg, store, replies: list[dict], sec_uid: str | None = None,
+                   cb=None) -> dict:
+    """把外部模型（例如 DSH 的 LLM 服务）给出的原始回复喂进来：解析 → 过滤 → 落候选。"""
+    merged: dict[str, str] = {}
+    contexts: dict[str, str] = {}
+    counts: dict[str, int] = {}
+    vid_seen: dict[str, set] = {}
+    failed: list[str] = []
+    calls = 0
+    for item in replies or []:
+        aweme_id = str(item.get("aweme_id") or "")
+        reply = str(item.get("reply") or "")
+        if not aweme_id or not reply:
+            continue
+        calls += 1
+        row = store.get_transcript(aweme_id)
+        if not row:
+            failed.append(aweme_id)
+            continue
+        text = row.get("raw_text") or row.get("text") or ""
+        pairs, ctxs = extract_pairs(reply)
+        keep = {w: r for w, r in pairs.items() if w in text}
+        if not keep:
+            continue
+        for wrong, right in keep.items():
+            merged[wrong] = right
+            counts[wrong] = counts.get(wrong, 0) + 1
+            vid_seen.setdefault(wrong, set()).add(aweme_id)
+            if wrong in ctxs and wrong not in contexts:
+                contexts[wrong] = ctxs[wrong]
+    kept, dropped = filter_candidates(store, merged)
+    kept = {w: r for w, r in kept.items() if counts.get(w, 0) >= int(cfg.get("polish.minHits") or 1)}
+    if kept:
+        store.save_terms(sec_uid or "", kept, source="ai",
+                         contexts={w: contexts[w] for w in kept if w in contexts},
+                         videos={w: len(vid_seen.get(w, ())) for w in kept})
+    return {"calls": calls, "sampled": calls, "terms": kept, "dropped": dropped,
+            "failed": failed, "counts": {w: counts.get(w, 0) for w in kept}}
+
+
 def mine(cfg, store, sec_uid: str | None = None, sample: int | None = None,
          ids: list[str] | None = None, cb=None) -> dict:
     """抽样挖术语表。"""

@@ -1,10 +1,18 @@
 {
   "name": "dsh-douyin-export",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "type": "module",
-  "description": "Download watermark-free Douyin videos, transcribe them with local or cloud ASR, proofread the transcript, and export Markdown/TXT/SRT/VTT/JSON/HTML/DOCX.",
+  "description": "Download watermark-free Douyin videos, transcribe them with local or cloud ASR, proofread the transcript with AI terms, and export Markdown/TXT/SRT/VTT/JSON/HTML/DOCX.",
   "license": "MIT",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "douyin",
+    "transcript",
+    "asr",
+    "markdown"
+  ],
   "author": "hangye.site",
   "repository": {
     "type": "git",
@@ -14,35 +22,34 @@
   "bugs": {
     "url": "https://github.com/hangyesite/dsh-douyin-export/issues"
   },
-  "keywords": [
-    "dsh",
-    "dsh-plugin",
-    "douyin",
-    "transcript",
-    "asr",
-    "markdown"
-  ],
   "exports": {
     ".": "./index.js",
+    "./client": "./client.js",
     "./locale/*.json": "./locale/*.json",
-    "./icon": "./icon.svg",
-    "./client": "./client.js"
+    "./icon": "./icon.svg"
   },
   "files": [
     "index.js",
+    "client.js",
     "server.js",
     "tasks.js",
-    "client.js",
+    "skills.js",
+    "action-cards.js",
     "cordis.patch.yml",
     "locale/*.json",
     "icon.svg",
     "engine",
-    "skills.js",
-    "action-cards.js",
     "skills/**",
     "mcp/**",
-    "engine/dyx/mcp.py"
+    "scripts/selfcheck.mjs",
+    "README.md",
+    "README.zh-CN.md",
+    "CHANGELOG.md",
+    "LICENSE"
   ],
+  "scripts": {
+    "test": "node scripts/selfcheck.mjs"
+  },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"

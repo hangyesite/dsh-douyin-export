@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.1
+
+- AI polish now defaults to the harness's own model service (e.g. `deepseek-official / deepseek-flash`): no API key required.
+- The polish model is selectable in the panel: any model registered in DSH, or a custom OpenAI-compatible endpoint (engine `http` mode).
+- Fixed `store.list_patches()` filtering so per-video patch lists load again.
+- `polish.mode` / `polish.provider` config keys added; shipped defaults stay blank (no vendor, no key).
+
 ## 1.0.0 — 2026-11-08
 
 First public release.

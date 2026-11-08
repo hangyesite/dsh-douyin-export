@@ -202,6 +202,10 @@ def build_parser() -> argparse.ArgumentParser:
     pl.add_argument("--sample", type=int, default=None,
                     help="抽样多少条代表作去问模型（默认取配置 polish.sampleSize）")
     pl.add_argument("--no-apply", action="store_true", help="只挖术语表，先不刷全库")
+    pl.add_argument("--dump-samples", action="store_true", dest="dump_samples",
+                    help="只输出抽样文本（不调模型），给 Host 侧用 DSH 自己的模型")
+    pl.add_argument("--ingest", default=None,
+                    help="读取外部模型回复的 JSON（[{aweme_id, reply}]）→ 解析并落候选")
     pl.add_argument("--show", action="store_true", help="只列出已有术语表")
     pl.add_argument("--apply-only", action="store_true", help="只按现有术语表刷库，不再问模型")
     pl.add_argument("--auto", action="store_true",
@@ -409,6 +413,16 @@ def main(argv: list[str] | None = None) -> int:
                 n = pol.drop_pairs(store, args.drop, sec)
                 emit({"ok": True, "dropped": n, "pairs": pairs,
                       "terms": store.list_terms(sec, args.limit)})
+            elif getattr(args, "dump_samples", False):
+                out = pol.dump_samples(cfg, store, sec, args.sample, scope_ids)
+                emit({"ok": True, **out})
+            elif getattr(args, "ingest", None):
+                data = json.loads(open(args.ingest, "r", encoding="utf-8").read())
+                replies = data.get("replies") if isinstance(data, dict) else data
+                res = pol.ingest_replies(cfg, store, replies or [], sec)
+                emit({"ok": True, "mine": res,
+                      "terms": store.list_terms(sec, args.limit),
+                      "patches": store.list_patches(sec, 200)})
             elif args.show:
                 emit({"ok": True, "terms": store.list_terms(sec, args.limit)})
             elif args.accept:

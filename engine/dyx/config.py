@@ -91,7 +91,9 @@ DEFAULTS: dict[str, Any] = {
     # 留空 apiKey 就等于不启用；进来的是「错→对」术语表，不重写正文。
     "polish": {
         # 任意 OpenAI 兼容的 chat 端点；插件不预置、不推荐任何厂商
-        "baseUrl": "",
+        "mode": "host",
+                "provider": "",
+                "baseUrl": "",
         "apiKey": "",
         "model": "",
         "concurrency": 2,

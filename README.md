@@ -193,3 +193,5 @@ Every command prints a single JSON object on stdout; progress goes to stderr. Ex
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+> AI polish runs on the harness's own model service by default (for example `deepseek-official / deepseek-flash`), so **no API key is needed**. Pick any model registered in the harness from the polish page, or switch `polish.mode` to `http` and fill `baseUrl` / `apiKey` for a custom endpoint.

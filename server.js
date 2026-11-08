@@ -446,6 +446,19 @@ export function registerDouyinRoutes(ctx, deps) {
     try {
       if (action === 'mine') {
         const sample = Number((body && body.sample) || 15)
+        const mode = deps.polishHost ? await deps.polishHost.mode() : 'http'
+        if (mode !== 'http' && deps.polishHost) {
+          const hosted = await deps.polishHost.mine({ author, ids, task, sample })
+          const patches = unwrap(
+            await deps.runEngine(config, ['polish', '--patches', '--limit', '200'], { timeoutMs: 30000 }),
+          )
+          return send(res, 200, {
+            ok: true,
+            ...hosted,
+            mode: 'host',
+            patches: (patches && patches.patches) || [],
+          })
+        }
         argv.push('--sample', String(sample), '--no-apply')
       } else if (action === 'accept') {
         const pairs = listifyPairs(body && body.pairs)
@@ -506,6 +519,24 @@ export function registerDouyinRoutes(ctx, deps) {
         out.config = null
       }
       send(res, 200, out)
+    }),
+
+    // AI 校对可用模型（DSH 已注册的 provider / model）+ 当前生效路由
+    wrap(async (req, res) => {
+      try {
+        if (!deps.polishHost) return send(res, 200, { ok: true, routes: [], mode: 'http' })
+        const routes = await deps.polishHost.listRoutes()
+        let current = null
+        try {
+          current = await deps.polishHost.resolveRoute()
+        } catch {
+          current = null
+        }
+        const mode = await deps.polishHost.mode()
+        send(res, 200, { ok: true, mode, routes, current })
+      } catch (error) {
+        send(res, 200, { ok: false, error: String(error?.message || error) })
+      }
     }),
 
     // 引擎目录（含单价）
@@ -660,6 +691,7 @@ export function registerDouyinRoutes(ctx, deps) {
 
   const paths = [
     '/api/douyin/state',
+    '/api/douyin/llm-models',
     '/api/douyin/engines',
     '/api/douyin/videos',
     '/api/douyin/status',

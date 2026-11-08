@@ -670,6 +670,9 @@ async function api(path, options) {
       const [author, setAuthor] = useState('')
       const [task, setTask] = useState('')
       const [ids, setIds] = useState('')
+      const [models, setModels] = useState([])
+      const [modelKey, setModelKey] = useState('')
+      const [modelMsg, setModelMsg] = useState('')
 
       const authors = ((state && state.stats && state.stats.authors) || [])
       const tasks = ((state && state.tasks) || []).filter((item) => item.status !== 'cancelled')
@@ -701,9 +704,49 @@ async function api(path, options) {
         }
       }, [])
 
+      const loadModels = useCallback(async () => {
+        try {
+          const result = await api('/api/douyin/llm-models')
+          if (!result || !result.ok) return
+          setModels(result.routes || [])
+          const current = result.current
+          const cfg = (state && state.config && state.config.polish) || {}
+          const wanted = cfg.provider && cfg.model ? `${cfg.provider}|${cfg.model}` : ''
+          setModelKey(
+            wanted
+            || (current ? `${current.provider}|${current.model}` : ''),
+          )
+        } catch {
+          /* 无模型服务时静默 */
+        }
+      }, [state && state.config])
+
+      const pickModel = useCallback(
+        async (value) => {
+          setModelKey(value)
+          setModelMsg('')
+          const [provider, model] = value.includes('|') ? value.split('|') : ['', '']
+          try {
+            await api('/api/douyin/settings', {
+              method: 'POST',
+              body: JSON.stringify({ key: 'polish.provider', value: provider }),
+            })
+            await api('/api/douyin/settings', {
+              method: 'POST',
+              body: JSON.stringify({ key: 'polish.model', value: model }),
+            })
+            setModelMsg(provider ? `已切到 ${value.replace('|', ' / ')}` : '已恢复默认模型')
+          } catch (error) {
+            setModelMsg('切换失败：' + ((error && error.message) || error))
+          }
+        },
+        [],
+      )
+
       useEffect(() => {
         load()
-      }, [load])
+        loadModels()
+      }, [load, loadModels])
 
       const call = useCallback(
         async (action, extra) => {
@@ -810,6 +853,27 @@ async function api(path, options) {
           { style: { fontSize: 12, opacity: 0.7, lineHeight: 1.7, marginBottom: 10 } },
           '下载 / 转写 / 导出都不会自动触发校对。这里先选范围，再挖候选、逐条或整批采纳，'
             + '最后点「应用」才把术语替换进导出文本（原始转写和时间戳都不动）。随时可撤销。',
+        ),
+
+        // 校对模型：默认跟随 DSH 自带官方模型，不需要任何 Key
+        h(
+          'div',
+          { style: { display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 8 } },
+          h('span', { style: { fontSize: 12, opacity: 0.7 } }, '校对模型'),
+          h(
+            'select',
+            { value: modelKey, onChange: (event) => pickModel(event.target.value), style: SEL_STYLE },
+            h('option', { value: '' }, '默认（DSH 自带模型）'),
+            ...models.map((item) =>
+              h(
+                'option',
+                { key: `${item.provider}|${item.model}`, value: `${item.provider}|${item.model}` },
+                item.label,
+              ),
+            ),
+          ),
+          h('span', { style: { fontSize: 11, opacity: 0.55 } }, '默认用 DSH 自己的模型，不用填 Key'),
+          modelMsg ? h('span', { style: { fontSize: 11, opacity: 0.7 } }, modelMsg) : null,
         ),
 
         // 范围
