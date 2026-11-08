@@ -47,5 +47,15 @@ for (const word of ['fanfan', 'aifan', '爱饭']) {
 }
 ok('未出现预置厂商名')
 
+// 7) MCP 变体的 skill 必须存在，并且用 MCP 工具名（douyin_*），不要混进 DSH 的 dyx_*
+const mcpSkillPath = path.join(root, 'mcp', 'SKILL.md')
+if (!fs.existsSync(mcpSkillPath)) fail('缺少 mcp/SKILL.md（给非 DSH 的 MCP 客户端用）')
+else {
+  const text = fs.readFileSync(mcpSkillPath, 'utf8')
+  if (!text.includes('douyin_run')) fail('mcp/SKILL.md 没提到 douyin_run')
+  else if (/\bdyx_run\b/.test(text)) fail('mcp/SKILL.md 出现了 dyx_run')
+  else ok('mcp/SKILL.md 使用 douyin_* 工具名')
+}
+
 console.log(bad ? `\n${bad} 项检查未通过` : '\n全部检查通过')
 process.exit(bad ? 1 : 0)
