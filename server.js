@@ -682,6 +682,13 @@ export function registerDouyinRoutes(ctx, deps) {
             timeoutMs: 20000,
           }),
         )
+        try {
+          if (deps.polishHost && typeof deps.polishHost.invalidate === 'function') {
+            deps.polishHost.invalidate()
+          }
+        } catch {
+          /* 缓存失效失败不影响保存结果 */
+        }
         send(res, 200, { ok: true, data })
       } catch (error) {
         send(res, 200, { ok: false, error: String(error?.message || error) })

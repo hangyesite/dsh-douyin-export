@@ -175,5 +175,9 @@ export function createPolishHost({ ctx, deps, config }) {
     }
   }
 
-  return { mode, engineSettings, listRoutes, resolveRoute, chat, mine }
+  function invalidate() {
+    cache = { at: 0, value: null };
+  }
+
+  return { mode, engineSettings, listRoutes, resolveRoute, chat, mine, invalidate }
 }

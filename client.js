@@ -451,14 +451,15 @@ async function api(path, options) {
       },
       {
         id: 'polish',
-        title: 'AI 校对（可选）',
+        title: 'AI 校对 · 自定义端点（可选）',
         hint:
-          '转写完让一个大模型挑同音错字，只回「错→对」术语表，再由本地做确定性替换；不会重写正文。'
-          + '和语音识别是两套配置，这里填 chat 模型即可。留空 apiKey = 不启用。',
+          '默认什么都不用填：校对直接使用 DSH 自带的模型（例如 deepseek-official / deepseek-flash），不消耗你自己的 Key。'
+          + '只有想用自己的 chat 端点时才在这里填 baseUrl / 模型 / Key，'
+          + '然后到「校对」页把「校对模型」选成「自定义端点」。',
         fields: [
-          { key: 'polish.baseUrl', label: 'Base URL', placeholder: 'https://api.openai.com/v1' },
-          { key: 'polish.model', label: '模型', placeholder: 'gpt-4o-mini' },
-          { key: 'polish.apiKey', label: 'API Key', placeholder: 'sk-…', secret: true },
+          { key: 'polish.baseUrl', label: 'Base URL（自定义端点）', placeholder: 'https://api.openai.com/v1' },
+          { key: 'polish.model', label: '模型（自定义端点）', placeholder: 'gpt-4o-mini' },
+          { key: 'polish.apiKey', label: 'API Key（自定义端点）', placeholder: 'sk-…', secret: true },
         ],
       },
     ]
@@ -673,6 +674,7 @@ async function api(path, options) {
       const [models, setModels] = useState([])
       const [modelKey, setModelKey] = useState('')
       const [modelMsg, setModelMsg] = useState('')
+      const [modelNow, setModelNow] = useState('')
 
       const authors = ((state && state.stats && state.stats.authors) || [])
       const tasks = ((state && state.tasks) || []).filter((item) => item.status !== 'cancelled')
@@ -710,32 +712,51 @@ async function api(path, options) {
           if (!result || !result.ok) return
           setModels(result.routes || [])
           const current = result.current
-          const cfg = (state && state.config && state.config.polish) || {}
-          const wanted = cfg.provider && cfg.model ? `${cfg.provider}|${cfg.model}` : ''
+          setModelNow(
+            result.mode === 'http'
+              ? '自定义端点'
+              : current
+                ? `${current.provider} / ${current.model}`
+                : '（没有可用模型）',
+          )
           setModelKey(
-            wanted
-            || (current ? `${current.provider}|${current.model}` : ''),
+            result.mode === 'http'
+              ? 'http'
+              : current
+                ? `${current.provider}|${current.model}`
+                : '',
           )
         } catch {
           /* 无模型服务时静默 */
         }
-      }, [state && state.config])
+      }, [])
 
       const pickModel = useCallback(
         async (value) => {
           setModelKey(value)
           setModelMsg('')
-          const [provider, model] = value.includes('|') ? value.split('|') : ['', '']
+          const isHttp = value === 'http'
+          const [provider, model] = !isHttp && value.includes('|') ? value.split('|') : ['', '']
           try {
+            await api('/api/douyin/settings', {
+              method: 'POST',
+              body: JSON.stringify({ key: 'polish.mode', value: isHttp ? 'http' : 'host' }),
+            })
             await api('/api/douyin/settings', {
               method: 'POST',
               body: JSON.stringify({ key: 'polish.provider', value: provider }),
             })
             await api('/api/douyin/settings', {
               method: 'POST',
-              body: JSON.stringify({ key: 'polish.model', value: model }),
+              body: JSON.stringify({ key: 'polish.model', value: isHttp ? '' : model }),
             })
-            setModelMsg(provider ? `已切到 ${value.replace('|', ' / ')}` : '已恢复默认模型')
+            if (isHttp) {
+              setModelMsg('已切到自定义端点（用「设置 & 登录」里的 baseUrl / Key）')
+              setModelNow('自定义端点')
+            } else {
+              setModelMsg(provider ? `已切到 ${value.replace('|', ' / ')}` : '已恢复默认模型')
+              setModelNow(provider ? value.replace('|', ' / ') : 'DSH 自带模型')
+            }
           } catch (error) {
             setModelMsg('切换失败：' + ((error && error.message) || error))
           }
@@ -864,6 +885,7 @@ async function api(path, options) {
             'select',
             { value: modelKey, onChange: (event) => pickModel(event.target.value), style: SEL_STYLE },
             h('option', { value: '' }, '默认（DSH 自带模型）'),
+            h('option', { value: 'http' }, '自定义端点（用设置里的 baseUrl / Key）'),
             ...models.map((item) =>
               h(
                 'option',
@@ -872,7 +894,11 @@ async function api(path, options) {
               ),
             ),
           ),
-          h('span', { style: { fontSize: 11, opacity: 0.55 } }, '默认用 DSH 自己的模型，不用填 Key'),
+          h(
+            'span',
+            { style: { fontSize: 11, opacity: 0.55 } },
+            `当前生效：${modelNow || '未检测到'}`,
+          ),
           modelMsg ? h('span', { style: { fontSize: 11, opacity: 0.7 } }, modelMsg) : null,
         ),
 
