@@ -196,16 +196,16 @@ This project follows [Semantic Versioning](https://semver.org/) strictly, and ev
 
 | Change | Bump |
 | --- | --- |
-| Bug fix, wording, docs, internal refactor with identical behaviour | patch (1.0.x) |
-| New user-facing capability, new tool parameter, new config key with a default | minor (1.x.0) |
-| Breaking change to a tool signature, config key, output layout, or the minimum DSH version | major (x.0.0) |
+| Bug fix, wording, docs, internal refactor with identical behaviour | patch (0.1.x) |
+| New user-facing capability, new tool parameter, new config key with a default | minor (0.x.0) |
+| Breaking change to a tool signature, config key, output layout, or the minimum DSH version | minor while `0.x`, major from `1.0.0` on |
 
 Rules:
 
 - A version is never reused: `CHANGELOG.md` gets one entry per release, newest first.
 - Every release is a commit plus an annotated tag `v<version>`, and `package.json` carries the same version.
 - Plugin-market submissions point at the latest tag, not at a moving branch.
-- The `1.0.0` line began as the first public release; `1.0.x` stays backward compatible.
+- The `0.1.x` series is the first public line. While the major version is `0`, a minor bump may still change a tool signature or config key; `1.0.0` is reserved for the point where the public API is frozen.
 
 ## License
 
