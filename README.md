@@ -190,6 +190,23 @@ Every command prints a single JSON object on stdout; progress goes to stderr. Ex
 
 `plugin/engine/dyx/mcp.py` is a stdio MCP server exposing eight of the same operations (`douyin_run`, `douyin_sync`, `douyin_download`, `douyin_transcribe`, `douyin_export`, `douyin_library`, `douyin_failures`, `douyin_settings`). See `mcp/README.md` for a Claude Desktop or DSH configuration snippet.
 
+## Versioning
+
+This project follows [Semantic Versioning](https://semver.org/) strictly, and every released version is a git tag.
+
+| Change | Bump |
+| --- | --- |
+| Bug fix, wording, docs, internal refactor with identical behaviour | patch (1.0.x) |
+| New user-facing capability, new tool parameter, new config key with a default | minor (1.x.0) |
+| Breaking change to a tool signature, config key, output layout, or the minimum DSH version | major (x.0.0) |
+
+Rules:
+
+- A version is never reused: `CHANGELOG.md` gets one entry per release, newest first.
+- Every release is a commit plus an annotated tag `v<version>`, and `package.json` carries the same version.
+- Plugin-market submissions point at the latest tag, not at a moving branch.
+- The `1.0.0` line began as the first public release; `1.0.x` stays backward compatible.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

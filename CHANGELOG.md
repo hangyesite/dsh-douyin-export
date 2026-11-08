@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.2
+
+- Fixed: the polish model choice now takes effect immediately after saving settings (the cached engine settings are invalidated on every config write).
+
 ## 1.0.1
 
 - AI polish now defaults to the harness's own model service (e.g. `deepseek-official / deepseek-flash`): no API key required.

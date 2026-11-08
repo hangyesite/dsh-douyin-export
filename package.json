@@ -1,6 +1,6 @@
 {
   "name": "dsh-douyin-export",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "private": true,
   "type": "module",
   "description": "Download watermark-free Douyin videos, transcribe them with local or cloud ASR, proofread the transcript with AI terms, and export Markdown/TXT/SRT/VTT/JSON/HTML/DOCX.",
