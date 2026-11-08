@@ -1,0 +1,11 @@
+node_modules/
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.DS_Store
+Thumbs.db
+*.log
+npm-debug.log*
+.tmp/
+dist/

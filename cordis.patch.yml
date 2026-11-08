@@ -1,0 +1,9 @@
+- insert:
+    - id: douyin-export
+      name: 'dsh-douyin-export'
+      config:
+        home: null
+        python: null
+        engine: sensevoice
+        formats:
+          - md

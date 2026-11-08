@@ -1,0 +1,60 @@
+{
+  "name": "dsh-douyin-export",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Download watermark-free Douyin videos, transcribe them with local or cloud ASR, proofread the transcript, and export Markdown/TXT/SRT/VTT/JSON/HTML/DOCX.",
+  "license": "MIT",
+  "author": "hangye.site",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hangyesite/dsh-douyin-export.git"
+  },
+  "homepage": "https://github.com/hangyesite/dsh-douyin-export#readme",
+  "bugs": {
+    "url": "https://github.com/hangyesite/dsh-douyin-export/issues"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "douyin",
+    "transcript",
+    "asr",
+    "markdown"
+  ],
+  "exports": {
+    ".": "./index.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg",
+    "./client": "./client.js"
+  },
+  "files": [
+    "index.js",
+    "server.js",
+    "tasks.js",
+    "client.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "engine",
+    "skills.js",
+    "action-cards.js",
+    "skills/**",
+    "mcp/**",
+    "engine/dyx/mcp.py"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-ui-sidebar",
+        "@deepseek-ai/dsh-client-ui-settings"
+      ]
+    }
+  }
+}
