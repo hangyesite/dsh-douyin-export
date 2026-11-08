@@ -4,6 +4,9 @@ description: 抖音视频下载、作者主页增量同步、语音转写、AI �
 whenToUse: 用户给出抖音作品链接、分享口令、作品 ID、作者主页链接，或要求把已下载的视频转成文字、纠正转写错字、导出 Markdown/SRT/DOCX/合集，或设置定时增量同步时使用。
 ---
 
+> Not running inside DSH? Use the framework-neutral MCP variant instead:
+> [`mcp/SKILL.md`](../../mcp/SKILL.md) — same capabilities with `douyin_*` tool names.
+
 # 抖音导出
 
 这个插件把「抖音无水印下载 → 语音转写 → 排版导出」串成一条流水线，所有产出落在任务目录 `<home>/tasks/<taskId>/` 下。

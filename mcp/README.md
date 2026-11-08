@@ -116,7 +116,8 @@ printf '%s\n' \
 |---|---|---|
 | **MCP 服务器**（本文件） | **可以，任何 MCP 客户端** | Claude Desktop / Claude Code / Cursor / Cline / Cherry Studio / Continue / DSH 的 `mcp-client` 都行。协议是标准 stdio JSON-RPC 2.0，工具名 `douyin_*`，不依赖 DSH。 |
 | **Cordis 插件**（本包根目录） | 只能装在 DSH | 用到 `ctx.tools` / `ctx.slots` / `ctx.llm` 等 DSH 服务。 |
-| **SKILL.md**（`skills/douyin-export/`） | 内容可读，但**工具名是 DSH 的 `dyx_*`** | 走 MCP 时工具名是 `douyin_*`，字段也略有差别；其它 agent 建议直接读 `mcp/README.md` 的工具表，或把 SKILL.md 里的 `dyx_xxx` 换成 `douyin_xxx`。 |
+| **DSH 的 SKILL.md**（`skills/douyin-export/`） | 只能给 DSH 用 | 里面写的是 `dyx_*` 工具名。走 MCP 的 agent 请用通用版 [`SKILL.md`](SKILL.md)（工具名 `douyin_*`）。 |
+| **通用 SKILL.md**（本目录 `mcp/SKILL.md`） | **可以，任何读 markdown 的 agent** | 与 DSH 版同能力，只换成 MCP 工具名，可直接放进 Claude Code / Cursor 的 skills 目录。 |
 | **CLI**（`python -m dyx`） | 可以，纯命令行 | 任何能跑 shell 的 agent 都能调，输出单一 JSON，最稳。 |
 
 所以对外分发时最通用的两种是：**MCP 服务器**（给支持 MCP 的客户端）和 **CLI**（给能执行命令的 agent）；Cordis 插件与 SKILL.md 是 DSH 专属的顺手形态。
