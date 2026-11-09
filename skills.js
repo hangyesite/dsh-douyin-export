@@ -11,7 +11,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-const PROVIDER = 'douyin-export';
+const PROVIDER = 'shortvideo-export';
 const RANK = 10;
 
 /** 极简 frontmatter 解析：只认 `key: value` 单行，够 SKILL.md 用。 */

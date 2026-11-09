@@ -20,7 +20,7 @@ import os
 import urllib.error
 import urllib.request
 
-from ..util import DyxError, find_ffmpeg, log, run
+from ..util import ShortVideoError, find_ffmpeg, log, run
 
 ENDPOINT = "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
 CHUNK_SECONDS = 180          # 16k 单声道 s16 ≈ 5.8MB/180s，base64 后 ≈ 7.7MB，留足余量
@@ -65,14 +65,14 @@ class DashScopeEngine:
         o = cfg.data["asr"].get("dashscope") or {}
         self.cfg = cfg
         self.model_name = o.get("model") or "qwen-audio-3.1-asr-flash"
-        self.key = (o.get("apiKey") or os.environ.get("DY_DASHSCOPE_KEY")
+        self.key = (o.get("apiKey") or os.environ.get("SV_DASHSCOPE_KEY")
                     or os.environ.get("DASHSCOPE_API_KEY") or "")
         self.timeout = int(o.get("timeoutSec") or 600)
         self.chunk_sec = int(o.get("chunkSec") or CHUNK_SECONDS)
         if not self.key:
-            raise DyxError("未配置百炼 API Key", code="asr_unconfigured",
-                           hint="运行 dyx_settings set asr.dashscope.apiKey <你的Key>，"
-                                "或设置环境变量 DY_DASHSCOPE_KEY")
+            raise ShortVideoError("未配置百炼 API Key", code="asr_unconfigured",
+                           hint="运行 sv_settings set asr.dashscope.apiKey <你的Key>，"
+                                "或设置环境变量 SV_DASHSCOPE_KEY")
 
     # ------------------------------------------------------------------ chunks
     def _chunks(self, wav_path: str) -> list[tuple[str, float]]:
@@ -129,14 +129,14 @@ class DashScopeEngine:
                     continue
                 code = "asr_auth" if e.code in (401, 403) else (
                     "asr_rate_limited" if e.code == 429 else "asr_http_error")
-                raise DyxError(f"百炼 ASR 返回 {e.code}: {detail}", code=code) from e
+                raise ShortVideoError(f"百炼 ASR 返回 {e.code}: {detail}", code=code) from e
             except Exception as e:  # noqa: BLE001
                 if attempt < 3:
                     last_error = str(e)[:160]
                     time.sleep(1.5 * (2 ** attempt))
                     continue
-                raise DyxError(f"百炼 ASR 调用失败: {e}", code="asr_call_failed") from e
-        raise DyxError(f"百炼 ASR 反复失败: {last_error}", code="asr_call_failed")
+                raise ShortVideoError(f"百炼 ASR 调用失败: {e}", code="asr_call_failed") from e
+        raise ShortVideoError(f"百炼 ASR 反复失败: {last_error}", code="asr_call_failed")
 
     # -------------------------------------------------------------- transcribe
     def transcribe(self, wav_path: str, language: str = "zh") -> dict:

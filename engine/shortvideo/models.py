@@ -5,7 +5,7 @@ import os
 import tarfile
 import urllib.request
 
-from .util import DyxError, ensure_dir
+from .util import ShortVideoError, ensure_dir
 
 SENSEVOICE_URL = (
     "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/"
@@ -19,7 +19,7 @@ def _stream_extract(url: str, dest_root: str, wanted_suffixes: tuple[str, ...],
                     log) -> list[str]:
     ensure_dir(dest_root)
     log(f"下载模型: {url}")
-    req = urllib.request.Request(url, headers={"User-Agent": "dyx/1.0"})
+    req = urllib.request.Request(url, headers={"User-Agent": "shortvideo-export/0.2.0"})
     written: list[str] = []
     with urllib.request.urlopen(req, timeout=120) as resp:
         with tarfile.open(fileobj=resp, mode="r|bz2") as tf:
@@ -46,13 +46,13 @@ def _stream_extract(url: str, dest_root: str, wanted_suffixes: tuple[str, ...],
 
 def install_model(cfg, engine: str = "sensevoice", log=print) -> dict:
     if engine not in ("sensevoice", "sv"):
-        raise DyxError(f"暂不支持自动安装 {engine} 的模型", code="unsupported",
+        raise ShortVideoError(f"暂不支持自动安装 {engine} 的模型", code="unsupported",
                        hint="faster-whisper 模型首次使用时由 HuggingFace 自动下载。")
     dest = os.path.join(cfg.home, "models", SENSEVOICE_DIR)
     plus = os.path.join(cfg.home, "models")
     files = _stream_extract(SENSEVOICE_URL, plus, SENSEVOICE_WANTED, log)
     if not files:
-        raise DyxError("模型下载失败", code="download_failed")
+        raise ShortVideoError("模型下载失败", code="download_failed")
     cfg.set("asr.sensevoice.modelDir", dest)
     cfg.save()
     return {"engine": "sensevoice", "modelDir": dest, "files": files}

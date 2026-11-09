@@ -1,6 +1,6 @@
 - insert:
-    - id: douyin-export
-      name: 'dsh-douyin-export'
+    - id: shortvideo-export
+      name: 'dsh-shortvideo-export'
       config:
         home: null
         python: null

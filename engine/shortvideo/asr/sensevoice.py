@@ -12,7 +12,7 @@ import wave
 
 import numpy as np
 
-from ..util import DyxError, find_ffmpeg, log, run
+from ..util import ShortVideoError, find_ffmpeg, log, run
 from . import merge_short, read_wav_f32
 
 TAG_RE = re.compile(r"<\|[^|]*\|>")
@@ -76,10 +76,10 @@ class SenseVoiceEngine:
             model = os.path.join(d, "model.onnx")
         tokens = os.path.join(d, "tokens.txt")
         if not (os.path.exists(model) and os.path.exists(tokens)):
-            raise DyxError(
+            raise ShortVideoError(
                 f"SenseVoice 模型缺失: {d}",
                 code="model_missing",
-                hint="运行 dyx_settings action=install_model engine=sensevoice 自动下载，"
+                hint="运行 sv_settings action=install_model engine=sensevoice 自动下载，"
                      "或改用 asr.engine=faster-whisper / openai。",
             )
         import sherpa_onnx
@@ -100,7 +100,7 @@ class SenseVoiceEngine:
         with wave.open(wav_path, "rb") as w:
             nch = w.getnchannels()
         if nch > 1:
-            raise DyxError("需要单声道 wav", code="bad_wav")
+            raise ShortVideoError("需要单声道 wav", code="bad_wav")
 
         for s in segs:
             i0 = int(s["start"] * sr)

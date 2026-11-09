@@ -47,7 +47,10 @@ CREATE TABLE IF NOT EXISTS videos (
   downloaded_at TEXT,
   error        TEXT,
   media_width  INTEGER,
-  media_height INTEGER
+  media_height INTEGER,
+  platform     TEXT DEFAULT 'douyin',
+  share_url    TEXT,
+  subtitle_url TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_videos_author ON videos(sec_uid);
 CREATE INDEX IF NOT EXISTS idx_videos_status ON videos(status);
@@ -132,7 +135,9 @@ class Store:
         """Add columns introduced after a library file was first created."""
         wanted = {
             "videos": [("media_width", "INTEGER"), ("media_height", "INTEGER"),
-                       ("no_speech", "INTEGER DEFAULT 0")],
+                       ("no_speech", "INTEGER DEFAULT 0"),
+            ("platform", "TEXT DEFAULT 'douyin'"),
+            ("share_url", "TEXT"), ("subtitle_url", "TEXT")],
         }
         for table, cols in wanted.items():
             have = {r["name"] for r in
@@ -204,7 +209,7 @@ class Store:
             "SELECT aweme_id, status FROM videos WHERE aweme_id=?", (v["aweme_id"],)).fetchone()
         cols = ["aweme_id", "sec_uid", "author_name", "desc", "create_time", "duration_ms",
                 "width", "height", "play_uri", "ratio", "cover", "image_count",
-                "is_image_post", "stats_json", "tags", "raw_json"]
+                "is_image_post", "stats_json", "tags", "raw_json", "platform", "share_url"]
         payload = {c: v.get(c) for c in cols}
         if existing:
             sets = ",".join(f"{c}=COALESCE(:{c},{c})" for c in cols[1:])
@@ -220,13 +225,16 @@ class Store:
 
     def mark_downloaded(self, aweme_id: str, file_path: str, size: int,
                         audio_path: str | None, ratio: str | None,
-                        width: int | None = None, height: int | None = None) -> None:
+                        width: int | None = None, height: int | None = None,
+                        subtitle_url: str | None = None) -> None:
         self.conn.execute(
             """UPDATE videos SET status='downloaded', file_path=?, file_size=?,
                  audio_path=COALESCE(?,audio_path), ratio=COALESCE(?,ratio),
                  media_width=COALESCE(?,media_width), media_height=COALESCE(?,media_height),
+                 subtitle_url=COALESCE(?,subtitle_url),
                  downloaded_at=?, error=NULL WHERE aweme_id=?""",
-            (file_path, size, audio_path, ratio, width, height, now_iso(), aweme_id))
+            (file_path, size, audio_path, ratio, width, height, subtitle_url,
+             now_iso(), aweme_id))
         self.conn.commit()
 
     def mark_failed(self, aweme_id: str, err: str) -> None:

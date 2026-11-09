@@ -9,13 +9,13 @@ import urllib.error
 import urllib.request
 import uuid
 
-from ..util import DyxError, find_ffmpeg, log, run
+from ..util import ShortVideoError, find_ffmpeg, log, run
 
 CHUNK_SECONDS = 600
 
 
 def _multipart(fields: dict[str, str], file_field: str, file_path: str) -> tuple[bytes, str]:
-    boundary = "----dyx" + uuid.uuid4().hex
+    boundary = "----shortvideo" + uuid.uuid4().hex
     parts: list[bytes] = []
     for k, v in fields.items():
         parts.append(
@@ -43,7 +43,7 @@ class OpenAICompatEngine:
         self.timeout = int(o.get("timeoutSec") or 600)
         self.cfg = cfg
         if not self.base:
-            raise DyxError("未配置 asr.openai.baseUrl", code="asr_unconfigured")
+            raise ShortVideoError("未配置 asr.openai.baseUrl", code="asr_unconfigured")
 
     # ------------------------------------------------------------------ chunks
     def _chunks(self, wav_path: str) -> list[tuple[str, float]]:
@@ -75,7 +75,7 @@ class OpenAICompatEngine:
         if language and language not in ("", "auto"):
             fields["language"] = language
         body, ctype = _multipart(fields, "file", path)
-        headers = {"Content-Type": ctype, "User-Agent": "dyx/1.0"}
+        headers = {"Content-Type": ctype, "User-Agent": "shortvideo-export/0.2.0"}
         if self.key:
             headers["Authorization"] = f"Bearer {self.key}"
         req = urllib.request.Request(url, data=body, headers=headers, method="POST")
@@ -84,9 +84,9 @@ class OpenAICompatEngine:
                 return json.loads(r.read().decode("utf-8", "replace"))
         except urllib.error.HTTPError as e:
             detail = e.read().decode("utf-8", "replace")[:400]
-            raise DyxError(f"ASR 接口返回 {e.code}: {detail}", code="asr_http_error") from e
+            raise ShortVideoError(f"ASR 接口返回 {e.code}: {detail}", code="asr_http_error") from e
         except Exception as e:  # noqa: BLE001
-            raise DyxError(f"ASR 接口调用失败: {e}", code="asr_call_failed") from e
+            raise ShortVideoError(f"ASR 接口调用失败: {e}", code="asr_call_failed") from e
 
     def transcribe(self, wav_path: str, language: str = "zh") -> dict:
         segments: list[dict] = []

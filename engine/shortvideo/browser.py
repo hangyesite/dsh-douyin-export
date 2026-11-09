@@ -13,7 +13,7 @@ import re
 import time
 from typing import Callable, Iterator
 
-from .util import DyxError, LoginRequired, log
+from .util import ShortVideoError, LoginRequired, log
 
 POST_API = "/aweme/v1/web/aweme/post/"
 DETAIL_API = "/aweme/v1/web/aweme/detail/"
@@ -159,10 +159,10 @@ class BrowserSession:
                 log(f"launch channel={ch} failed: {str(e)[:160]}")
         if self.ctx is None:
             self._pw.stop()
-            raise DyxError(
+            raise ShortVideoError(
                 f"无法启动 Chrome: {last}",
                 code="browser_launch_failed",
-                hint="确认已安装 Google Chrome 或 Edge；或在 dyx_settings 里设置 browser.channel。",
+                hint="确认已安装 Google Chrome 或 Edge；或在 sv_settings 里设置 browser.channel。",
             )
 
         self.ctx.set_default_timeout(int(self.b.get("navTimeoutMs") or 60000))
@@ -371,7 +371,7 @@ class BrowserSession:
         for it in items:
             if PROFILE_API in it["url"] and it.get("json"):
                 return it["json"].get("user") or {}
-        raise DyxError(f"未能取得作者信息 {sec_uid}", code="profile_unavailable")
+        raise ShortVideoError(f"未能取得作者信息 {sec_uid}", code="profile_unavailable")
 
     # ---------------------------------------------------------------- posts
     # --------------------------------------------------------------- scrolling
@@ -512,8 +512,8 @@ class BrowserSession:
                     return ad
                 reason = (j.get("filter_detail") or {}).get("filter_reason")
                 if reason:
-                    raise DyxError(f"作品 {aweme_id} 不可访问: {reason}",
+                    raise ShortVideoError(f"作品 {aweme_id} 不可访问: {reason}",
                                    code="aweme_unavailable")
             if attempt < retries:
                 self.page.wait_for_timeout(1200)
-        raise DyxError(f"未能取得作品详情 {aweme_id}", code="detail_unavailable")
+        raise ShortVideoError(f"未能取得作品详情 {aweme_id}", code="detail_unavailable")

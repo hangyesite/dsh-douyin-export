@@ -17,7 +17,7 @@ import re
 import urllib.error
 import urllib.request
 
-from .util import DESKTOP_UA, DyxError, log
+from .util import DESKTOP_UA, ShortVideoError, log
 
 SEC_RE = re.compile(r"MS4wLjABAAAA[\w\-]{10,}")
 USER_URL_RE = re.compile(
@@ -49,9 +49,9 @@ def _follow_short(url: str, hops: int = 5) -> str:
             if loc:
                 current = loc
                 continue
-            raise DyxError(f"短链解析失败：{url}（HTTP {e.code}）", code="bad_short_link") from e
+            raise ShortVideoError(f"短链解析失败：{url}（HTTP {e.code}）", code="bad_short_link") from e
         except Exception as e:  # noqa: BLE001
-            raise DyxError(f"短链解析失败：{url}（{e}）", code="bad_short_link") from e
+            raise ShortVideoError(f"短链解析失败：{url}（{e}）", code="bad_short_link") from e
     return current
 
 
@@ -105,7 +105,7 @@ def parse_targets(text: str, resolve_short: bool = True) -> dict:
     for chunk in chunks:
         try:
             hit = classify(chunk, resolve_short=resolve_short)
-        except DyxError as e:
+        except ShortVideoError as e:
             log(f"跳过：{e}")
             unknown.append(chunk)
             continue

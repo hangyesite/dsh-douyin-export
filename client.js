@@ -1,17 +1,17 @@
 /**
- * 抖音导出 —— Web 界面。
+ * 短视频导出 —— Web 界面。
  *
  * 兑现：不靠弹浏览器窗口，所有操作都在 DSH 自己的页面里完成。
  *
- *   · 会话标题栏右侧一个「抖音导出」按钮 → 打开面板
+ *   · 会话标题栏右侧一个「短视频导出」按钮 → 打开面板
  *   · 面板四页：新建任务 / 任务 / 资料库 / 设置&登录
  *   · 新建任务支持混粘：视频链接、分享口令、抖音号、作者主页链接，一行一个
  *   · 登录：点一下就把二维码画在面板里，手机扫完即完成（登录态存在 Chrome profile，之后不用再扫）
  *
- * 所有请求都是同源相对路径 /api/douyin/*，由 Host 侧 server.js 提供。
+ * 所有请求都是同源相对路径 /api/shortvideo/*，由 Host 侧 server.js 提供。
  */
 window.__ModuleLoader__.load({
-  id: 'dsh-douyin-export',
+  id: 'dsh-shortvideo-export',
   factory(require) {
     const React = require('react')
     const h = React.createElement
@@ -283,7 +283,7 @@ async function api(path, options) {
         {
           type: 'button',
           onClick: () => setOpen(!open),
-          title: '抖音导出：下载无水印视频、转文字、排版导出',
+          title: '短视频导出：下载无水印视频、转文字、排版导出',
           style: {
             display: 'inline-flex',
             alignItems: 'center',
@@ -299,7 +299,7 @@ async function api(path, options) {
           },
         },
         h('span', { style: { fontSize: 13 } }, '🎬'),
-        h('span', null, '抖音导出'),
+        h('span', null, '短视频导出'),
       )
     }
 
@@ -405,6 +405,7 @@ async function api(path, options) {
       { id: 'openai', text: 'OpenAI 兼容接口' },
       { id: 'dashscope', text: '阿里云百炼' },
       { id: 'volc', text: '豆包（火山引擎）' },
+      { id: 'official', text: '平台官方字幕（小红书自带，逐字最准）' },
     ]
 
     const ENGINE_KEYS = [
@@ -484,7 +485,7 @@ async function api(path, options) {
         if (value === undefined) return
         setBusy(field.key)
         setNote(null)
-        const result = await api('/api/douyin/settings', {
+        const result = await api('/api/shortvideo/settings', {
           method: 'POST',
           body: JSON.stringify({ key: field.key, value }),
         })
@@ -598,7 +599,7 @@ async function api(path, options) {
       if (!path) return ''
       const value = pick(config || {}, path)
       if (value) return ''
-      return '还没填 ' + ENGINE_NAMES[engineId] + ' 的 API Key —— 到「设置 & 登录」页填一下就能用。'
+      return '还没填 ' + ENGINE_NAMES[engineId] + ' 的 API Key —— 到「设置」页填一下就能用。'
     }
 
     function jobPercent(job) {
@@ -699,7 +700,7 @@ async function api(path, options) {
       }, [scope, author, task, ids, authors, tasks])
 
       const load = useCallback(async () => {
-        const result = await api('/api/douyin/polish')
+        const result = await api('/api/shortvideo/polish')
         if (result && result.ok) {
           setTerms(result.terms || [])
           setPatches(result.patches || [])
@@ -708,7 +709,7 @@ async function api(path, options) {
 
       const loadModels = useCallback(async () => {
         try {
-          const result = await api('/api/douyin/llm-models')
+          const result = await api('/api/shortvideo/llm-models')
           if (!result || !result.ok) return
           setModels(result.routes || [])
           const current = result.current
@@ -738,15 +739,15 @@ async function api(path, options) {
           const isHttp = value === 'http'
           const [provider, model] = !isHttp && value.includes('|') ? value.split('|') : ['', '']
           try {
-            await api('/api/douyin/settings', {
+            await api('/api/shortvideo/settings', {
               method: 'POST',
               body: JSON.stringify({ key: 'polish.mode', value: isHttp ? 'http' : 'host' }),
             })
-            await api('/api/douyin/settings', {
+            await api('/api/shortvideo/settings', {
               method: 'POST',
               body: JSON.stringify({ key: 'polish.provider', value: provider }),
             })
-            await api('/api/douyin/settings', {
+            await api('/api/shortvideo/settings', {
               method: 'POST',
               body: JSON.stringify({ key: 'polish.model', value: isHttp ? '' : model }),
             })
@@ -774,7 +775,7 @@ async function api(path, options) {
           setBusy(action)
           setMsg('')
           try {
-            const result = await api('/api/douyin/polish/' + action, {
+            const result = await api('/api/shortvideo/polish/' + action, {
               method: 'POST',
               body: JSON.stringify(extra || body()),
             })
@@ -1076,6 +1077,86 @@ async function api(path, options) {
             ),
       )
     }
+    // 平台列表：以后加平台只需在这里加一行
+    const PLATFORMS = [
+      { id: 'douyin', name: '抖音', app: '抖音 App',
+        note: '作者作品列表、无水印视频下载都需要它' },
+      { id: 'xiaohongshu', name: '小红书', app: '小红书 App',
+        note: '小红书作者作品列表与平台官方字幕都需要它' },
+    ]
+
+    function LoginPane({ logins, startLogin, qrTick }) {
+      const handle = startLogin || (() => {})
+      return h(
+        'div',
+        { style: { padding: '4px 0 8px' } },
+        h(
+          'div',
+          { style: { fontSize: 13, opacity: 0.72, marginBottom: 14 } },
+          '每个平台扫一次码就够了；登录态存在本机浏览器 profile 里，不会上传。',
+        ),
+        PLATFORMS.map((pf) => {
+          const st = (logins && logins[pf.id]) || null
+          const ok = !!(st && st.state === 'loggedIn')
+          const waiting = !!(st && st.state === 'waiting')
+          return h(
+            'div',
+            {
+              key: pf.id,
+              style: {
+                border: '1px solid rgba(127,127,127,0.25)',
+                borderRadius: 10,
+                padding: '14px 16px',
+                marginBottom: 12,
+                display: 'flex',
+                gap: 18,
+                alignItems: 'flex-start',
+                flexWrap: 'wrap',
+              },
+            },
+            h(
+              'div',
+              { style: { flex: 1, minWidth: 220 } },
+              h(
+                'div',
+                { style: { display: 'flex', alignItems: 'center', gap: 8 } },
+                h('strong', { style: { fontSize: 14 } }, pf.name),
+                ok
+                  ? h('span', { style: { fontSize: 12, color: '#2fa84f' } }, '✅ 已登录')
+                  : h('span', { style: { fontSize: 12, opacity: 0.6 } }, waiting ? '等待扫码…' : '未登录'),
+              ),
+              h('div', { style: { fontSize: 12, opacity: 0.66, marginTop: 6 } }, pf.note),
+              h(
+                'button',
+                {
+                  type: 'button',
+                  onClick: () => handle(pf.id),
+                  style: { ...btnStyle(ok ? 'ghost' : 'primary'), marginTop: 10 },
+                },
+                ok ? '重新登录' : `扫码登录${pf.name}`,
+              ),
+              waiting
+                ? h(
+                    'div',
+                    { style: { fontSize: 12, opacity: 0.6, marginTop: 6 } },
+                    `用${pf.app}扫码确认；扫完这一步就永久生效。`,
+                  )
+                : null,
+            ),
+            waiting
+              ? h('img', {
+                  src: `/api/shortvideo/qr.png?platform=${pf.id}&t=${qrTick}`,
+                  alt: `${pf.name}登录二维码`,
+                  width: 170,
+                  height: 170,
+                  style: { borderRadius: 8, background: '#fff', padding: 6, display: 'block' },
+                })
+              : null,
+          )
+        }),
+      )
+    }
+
     function Panel() {
       const open = true
       const [tab, setTab] = useState('new')
@@ -1107,7 +1188,7 @@ async function api(path, options) {
           if (!list.length) return
           setPolishBusy(list.length > 1 ? `批量 ${list.length} 篇` : list[0])
           try {
-            const result = await api('/api/douyin/polish/mine', {
+            const result = await api('/api/shortvideo/polish/mine', {
               method: 'POST',
               body: JSON.stringify({
                 ids: list,
@@ -1135,22 +1216,24 @@ async function api(path, options) {
       const [taskView, setTaskView] = useState(null)
       const [taskBusy, setTaskBusy] = useState(false)
       const [login, setLogin] = useState(null)
+      const [logins, setLogins] = useState({})
       const [qrTick, setQrTick] = useState(Date.now())
       const timer = useRef(null)
 
       const refresh = useCallback(async () => {
         const [stateResult, enginesResult] = await Promise.all([
-          api('/api/douyin/state'),
-          engines.length ? Promise.resolve(null) : api('/api/douyin/engines'),
+          api('/api/shortvideo/state'),
+          engines.length ? Promise.resolve(null) : api('/api/shortvideo/engines'),
         ])
         if (stateResult && stateResult.ok) {
           setState(stateResult)
           setLogin(stateResult.login || null)
+        setLogins((stateResult && stateResult.logins) || {})
         }
         if (enginesResult && enginesResult.ok && Array.isArray(enginesResult.engines)) {
           setEngines(enginesResult.engines)
         }
-        api('/api/douyin/tasks').then((result) => {
+        api('/api/shortvideo/tasks').then((result) => {
           if (result && result.ok) setTasks(result.tasks || [])
         })
       }, [engines.length])
@@ -1170,7 +1253,7 @@ async function api(path, options) {
         if (libFilter.task) params.set('task', libFilter.task)
         if (libFilter.status) params.set('status', libFilter.status)
         if (libFilter.q) params.set('q', libFilter.q)
-        api('/api/douyin/videos?' + params.toString()).then((result) => {
+        api('/api/shortvideo/videos?' + params.toString()).then((result) => {
           if (result && result.ok) {
             setVideos(result.videos || result.items || [])
             setLibTotal(typeof result.total === 'number' ? result.total : null)
@@ -1183,7 +1266,7 @@ async function api(path, options) {
         if (!open || tab !== 'jobs' || !taskView) return undefined
         const id = taskView.task.id
         const tick = setInterval(() => {
-          api(`/api/douyin/tasks/${encodeURIComponent(id)}`).then((result) => {
+          api(`/api/shortvideo/tasks/${encodeURIComponent(id)}`).then((result) => {
             if (result && result.ok) setTaskView(result)
           })
         }, 3000)
@@ -1195,9 +1278,20 @@ async function api(path, options) {
           setNotice({ kind: 'error', text: '先粘一个链接或抖音号吧' })
           return
         }
+        if (engine === 'official') {
+          const hasXhs = /xiaohongshu\.com|xhslink\.(?:cn|com)/i.test(text)
+          const hasDouyin = /douyin\.com|iesdouyin|aweme\.snssdk/i.test(text)
+          if (!hasXhs || hasDouyin) {
+            setNotice({
+              kind: 'error',
+              text: '「平台官方字幕」只能用于小红书作品：请只粘小红书链接，或把转写引擎换成阿里云百炼 / 本地 SenseVoice。',
+            })
+            return
+          }
+        }
         setSubmitting(true)
         setNotice(null)
-        const result = await api('/api/douyin/task', {
+        const result = await api('/api/shortvideo/task', {
           method: 'POST',
           body: JSON.stringify({ text, mode, engine, formats, merge, statsFields: pickedStats(advFields), timestamps: advStamps,
             withLink: advLink, published: advPublished, mergeOrder: advOrder, full: mode === 'full' }),
@@ -1214,27 +1308,29 @@ async function api(path, options) {
         }
       }
 
-      const startLogin = async () => {
-        const result = await api('/api/douyin/login', {
+      const startLogin = async (platform = 'douyin') => {
+        const result = await api('/api/shortvideo/login', {
           method: 'POST',
-          body: JSON.stringify({ waitSeconds: 300 }),
+          body: JSON.stringify({ platform, waitSeconds: 300 }),
         })
         if (result.ok) {
-          setLogin({ state: 'waiting' })
+          setLogins((prev) => ({ ...prev, [platform]: { state: 'waiting', platform } }))
+          if (platform === 'douyin') setLogin({ state: 'waiting' })
           setQrTick(Date.now())
-          setNotice({ kind: 'ok', text: '已打开登录，请用抖音 App 扫码（二维码过期会自动刷新）' })
+          const name = platform === 'xiaohongshu' ? '小红书' : '抖音'
+          setNotice({ kind: 'ok', text: `已打开${name}登录，请用 App 扫码（二维码过期会自动刷新）` })
         } else {
           setNotice({ kind: 'error', text: result.error || '登录启动失败' })
         }
       }
 
       const openJob = async (id) => {
-        const result = await api(`/api/douyin/job?id=${encodeURIComponent(id)}`)
+        const result = await api(`/api/shortvideo/job?id=${encodeURIComponent(id)}`)
         if (result.ok) setJob(result.job)
       }
 
       const openTask = async (id) => {
-        const result = await api(`/api/douyin/tasks/${encodeURIComponent(id)}`)
+        const result = await api(`/api/shortvideo/tasks/${encodeURIComponent(id)}`)
         if (result && result.ok) setTaskView(result)
         else setNotice({ kind: 'error', text: (result && result.error) || '读不到这个任务' })
       }
@@ -1247,7 +1343,7 @@ async function api(path, options) {
           ...(extra || {}),
         }
         const result = await api(
-          `/api/douyin/tasks/${encodeURIComponent(taskView.task.id)}/${action}`,
+          `/api/shortvideo/tasks/${encodeURIComponent(taskView.task.id)}/${action}`,
           { method: 'POST', body: JSON.stringify(payload) },
         )
         setTaskBusy(false)
@@ -1264,7 +1360,7 @@ async function api(path, options) {
       }
 
       const cancelJobById = async (id) => {
-        const result = await api('/api/douyin/cancel', {
+        const result = await api('/api/shortvideo/cancel', {
           method: 'POST',
           body: JSON.stringify({ id }),
         })
@@ -1283,13 +1379,14 @@ async function api(path, options) {
         ['jobs', '任务'],
         ['library', '资料库'],
         ['polish', '校对'],
-        ['account', '设置 / 登录'],
+        ['login', '登录'],
+        ['account', '设置'],
       ]
 
       return h(
         'div',
         {
-          'aria-label': '抖音导出',
+          'aria-label': '短视频导出',
           style: {
             height: '100%',
             minHeight: 420,
@@ -1324,7 +1421,7 @@ async function api(path, options) {
               },
             },
             h('span', { style: { fontSize: 16 } }, '🎬'),
-            h('strong', { style: { fontSize: 14 } }, '抖音导出'),
+            h('strong', { style: { fontSize: 14 } }, '短视频导出'),
             h(
               'span',
               { style: { fontSize: 12, opacity: 0.6 } },
@@ -2118,51 +2215,17 @@ async function api(path, options) {
                 )
               : null,
 
-            // ---- 设置 / 登录
+            // ---- 登录（按平台分开，以后加平台只需改 PLATFORMS）
+            tab === 'login'
+              ? h(LoginPane, { logins: logins || {}, startLogin, qrTick })
+              : null,
+
+            // ---- 设置
             tab === 'account'
               ? h(
                   'div',
                   null,
                   h('div', { style: { display: 'flex', gap: 24, flexWrap: 'wrap' } }, 
-                    h(
-                      'div',
-                      { style: { minWidth: 260 } },
-                      label('登录（扫码一次，之后一直有效）'),
-                      loggedIn
-                        ? h('div', { style: { fontSize: 13, color: '#5cb85c' } }, '✅ 已登录，可以同步作者的全部作品了')
-                        : h(
-                            'div',
-                            null,
-                            h(
-                              'button',
-                              { type: 'button', onClick: startLogin, style: btnStyle('primary') },
-                              '显示登录二维码',
-                            ),
-                            login && login.state === 'waiting'
-                              ? h(
-                                  'div',
-                                  { style: { marginTop: 12 } },
-                                  h('img', {
-                                    src: `/api/douyin/qr.png?t=${qrTick}`,
-                                    alt: '抖音登录二维码',
-                                    width: 190,
-                                    height: 190,
-                                    style: {
-                                      borderRadius: 8,
-                                      background: '#fff',
-                                      padding: 6,
-                                      display: 'block',
-                                    },
-                                  }),
-                                  h(
-                                    'div',
-                                    { style: { fontSize: 12, opacity: 0.65, marginTop: 8 } },
-                                    '用抖音 App 扫码确认。二维码会自动刷新；扫完这一步就永久生效（存在 Chrome profile 里）。',
-                                  ),
-                                )
-                              : null,
-                          ),
-                    ),
                     h(
                       'div',
                       { style: { flex: 1, minWidth: 260 } },
@@ -2269,8 +2332,8 @@ async function api(path, options) {
     return {
       inject: ['slots'],
       apply(ctx) {
-        const PANEL_ID = 'douyin-export'
-        const title = () => '抖音导出'
+        const PANEL_ID = 'shortvideo-export'
+        const title = () => '短视频导出'
 
         // 确认卡的浏览器侧 body（Host 侧 kind 在 action-cards.js）
         // 注意：actionCards 不在 inject 列表里，直接 ctx.get 会抛错并中断整个 apply，
@@ -2283,7 +2346,7 @@ async function api(path, options) {
         }
         if (cards && typeof cards.register === 'function') {
           ctx.effect(() =>
-            cards.register({ action: 'douyin.confirm', locale: 'douyin-export', Body: ConfirmBody }),
+            cards.register({ action: 'shortvideo.confirm', locale: 'shortvideo-export', Body: ConfirmBody }),
           )
         }
 

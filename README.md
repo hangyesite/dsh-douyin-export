@@ -12,14 +12,15 @@ Built as a DSH plugin: it registers agent tools, a Skill, a confirmation action 
 - **Proofread** — an optional chat model mines a `wrong → right` term table from a sample, you accept what is real, and the replacement is applied deterministically. Nothing is rewritten, timestamps are untouched. Per-occurrence fixes (`wrong => right || the sentence`) resolve homophones that only one sentence gets wrong.
 - **Export** — Markdown with YAML front-matter, plus TXT / SRT / VTT / JSON / HTML / DOCX. Optional merged collection (MD/TXT/HTML/DOCX), newest first.
 - **Tasks** — every run gets its own directory (`video/`, `audio/`, `transcript/`, `export/<format>/`, `export/合集/`), a stage table (download / transcribe / export) and a live progress snapshot.
-- **Panel** — left-sidebar icon and a settings section. Tabs: Tasks, Library (filter by author / task / status / keyword), Proofread, Settings & Login.
+- **Panel** — left-sidebar icon and a settings section. Tabs: New task, Tasks, Library (filter by author / task / status / keyword), Proofread, **Login**, Settings.
+- **Login tab** — one card per platform (currently Douyin and Xiaohongshu), each with its own login state and QR code; adding a platform only means adding one entry to `PLATFORMS`.
 
 ## Requirements
 
 | Need | Notes |
 | --- | --- |
 | DSH | any recent build; the plugin uses `ctx.tools`, `ctx.slots`, `ctx.skills`, `actionCards` and `schedule` |
-| Python | 3.10+ on `PATH` as `python` (or set `DY_PYTHON` / the `python` config key) |
+| Python | 3.10+ on `PATH` as `python` (or set `SV_PYTHON` / the `python` config key) |
 | ffmpeg | `ffmpeg` + `ffprobe` on `PATH`, or set `media.ffmpegPath` |
 | Browser | system Chrome or Edge — the plugin drives it with Playwright for Douyin metadata |
 | Cloud keys | only if you pick a cloud engine; local SenseVoice needs no account |
@@ -34,7 +35,7 @@ python -m playwright install chromium   # only if you have no Chrome/Edge
 ## Install
 
 ```sh
-dsh plugin add https://github.com/<owner>/douyin-export
+dsh plugin add https://github.com/<owner>/shortvideo-export
 ```
 
 Or from a local checkout, in DSH: Plugin Manager → install bundle → point at this directory.
@@ -45,26 +46,26 @@ Or from a local checkout, in DSH: Plugin Manager → install bundle → point at
 2. Local transcription needs a model: Settings → *Download model* (SenseVoice `int8`, ~228 MB) — or set `asr.sensevoice.modelDir` to an existing directory.
 3. Paste a link into **Tasks → New task** and pick what to do (download only, or download + transcribe + export).
 
-> Authors with more than ~18 videos require a logged-in Douyin session to page further. That is a Douyin-side limit, not a plugin limit: the profile page shows "登录后查看更多作品" to anonymous visitors. `dyx_login` opens a window, you scan once, and later syncs see the full list.
+> Authors with more than ~18 videos require a logged-in Douyin session to page further. That is a Douyin-side limit, not a plugin limit: the profile page shows "登录后查看更多作品" to anonymous visitors. `sv_login` opens a window, you scan once, and later syncs see the full list.
 
 ## Agent tools
 
 | Tool | Purpose |
 | --- | --- |
-| `dyx_run` | one-shot: fetch → download → transcribe → export for any mix of links, IDs and profile links |
-| `dyx_sync` | sync one author's video list (incremental by default, `full` to rescan) |
-| `dyx_download` | download watermark-free video for IDs or an author |
-| `dyx_transcribe` | transcribe downloaded videos with a chosen engine |
-| `dyx_export` | export transcripts; per-video files and/or a merged collection |
-| `dyx_polish` | mine term candidates, list terms, accept (global or per-occurrence), apply, reset |
-| `dyx_failures` | explain download / transcription failures by category, with retry advice |
-| `dyx_library` | library stats, authors, and video lists |
-| `dyx_settings` | read/write settings, list engines |
-| `dyx_login` | open the browser for a one-time QR login |
-| `dyx_job` | list / inspect / cancel background jobs |
-| `dyx_subscribe` | register a scheduled incremental sync (DSH scheduled task) |
+| `sv_run` | one-shot: fetch → download → transcribe → export for any mix of links, IDs and profile links |
+| `sv_sync` | sync one author's video list (incremental by default, `full` to rescan) |
+| `sv_download` | download watermark-free video for IDs or an author |
+| `sv_transcribe` | transcribe downloaded videos with a chosen engine |
+| `sv_export` | export transcripts; per-video files and/or a merged collection |
+| `sv_polish` | mine term candidates, list terms, accept (global or per-occurrence), apply, reset |
+| `sv_failures` | explain download / transcription failures by category, with retry advice |
+| `sv_library` | library stats, authors, and video lists |
+| `sv_settings` | read/write settings, list engines |
+| `sv_login` | open the browser for a one-time QR login |
+| `sv_job` | list / inspect / cancel background jobs |
+| `sv_subscribe` | register a scheduled incremental sync (DSH scheduled task) |
 
-Long operations return a job id and keep running in the background; the panel shows their progress, and `dyx_job` reports from the agent side.
+Long operations return a job id and keep running in the background; the panel shows their progress, and `sv_job` reports from the agent side.
 
 ## Transcription engines
 
@@ -75,14 +76,17 @@ Long operations return a job id and keep running in the background; the panel sh
 | `openai` | any OpenAI-compatible `/audio/transcriptions` | word/sentence depends on provider | base URL, key, model |
 | `dashscope` | Aliyun Bailian (Qwen/Fun-ASR) | word-level (`begin_time`/`end_time`) | API key |
 | `volc` | Volcengine Doubao ASR | sentence-level (`utterances`) | API key, and a public audio URL or TOS bucket |
+| `official` | the platform's own subtitle track (Xiaohongshu Chinese track) | sentence-level (the subtitle's own timeline) | `pip install xhshow`, one Xiaohongshu login; **Xiaohongshu notes only** |
 
 The plugin treats them as equals: no engine is recommended, no price is displayed, and every engine is reachable from the panel, the tools and the CLI. Pick per task.
+
+> `official` is bound to a platform: it reads the subtitle track stored with a Xiaohongshu note, so it only works on Xiaohongshu tasks. If you pick it while the input has no Xiaohongshu link (or mixes Douyin in), the panel refuses to create the task and the API answers `engine_platform_mismatch`; the engine itself also rejects mixed batches.
 
 AI proofreading is configured separately (`polish.*`) because it needs a **chat** model, not an ASR one — any OpenAI-compatible endpoint works.
 
 ## Configuration
 
-Settings live in `<home>/config.json` (`~/.dsh-douyin` by default, `DY_DOUYIN_HOME` to override). Most are editable from the panel; all are readable/writable by `dyx_settings` and by `python -m dyx settings`.
+Settings live in `<home>/config.json` (`~/.dsh-shortvideo` by default, `SV_HOME` to override). Most are editable from the panel; all are readable/writable by `sv_settings` and by `python -m shortvideo settings`.
 
 | Key | Default | Meaning |
 | --- | --- | --- |
@@ -93,7 +97,7 @@ Settings live in `<home>/config.json` (`~/.dsh-douyin` by default, `DY_DOUYIN_HO
 | `fetch.pageSize` / `fetch.maxScrolls` | `18` / `400` | paging limits |
 | `media.ffmpegPath` | auto | path to `ffmpeg` (ffprobe is looked up next to it) |
 | `media.preferRatio` | `1080p` | preferred download ratio, falls back automatically |
-| `asr.engine` | `sensevoice` | default engine for `dyx_transcribe` |
+| `asr.engine` | `sensevoice` | default engine for `sv_transcribe` |
 | `asr.language` | `zh` | language hint |
 | `asr.concurrency` | `4` | parallel cloud requests (local engines stay serial) |
 | `asr.breakerConsecutive` | `5` | pause the batch after N consecutive failures (0 disables) |
@@ -155,7 +159,7 @@ transcript:
 1. **Mine** — a chat model reads a sample of transcripts and answers only `wrong => right` lines (optionally with the sentence that contains it). Answers that hedge ("possibly", "needs confirmation") are dropped, and a candidate must actually appear in the source text.
 2. **Accept** — AI candidates are only *candidates*. Nothing is applied until you accept it, either globally for that author or **only at that one occurrence** (`wrong => right || the sentence`), which is how homophones that only some sentences get wrong stay correct elsewhere.
 3. **Apply** — replacement is deterministic and local: longest term first, then per-occurrence patches, then the text is stored as `polished` next to the untouched `text`. Exports read `polished`; the ASR result is never lost.
-4. **Undo** — one click (or `dyx_polish reset`) drops every polished text and re-export uses the raw transcript again.
+4. **Undo** — one click (or `sv_polish reset`) drops every polished text and re-export uses the raw transcript again.
 
 ## Privacy
 
@@ -168,7 +172,7 @@ transcript:
 - Douyin changes its front end often; the metadata path drives a real browser precisely because plain HTTP is blocked by the `a_bogus` / Argus signature chain.
 - Anonymous profile pages are cut at roughly 18 videos; log in once for the rest.
 - Image-only posts (图集) have no video or audio — they are marked `skipped` and listed in the task's failure explanation.
-- Videos deleted or restricted upstream return 404/403 and cannot be recovered; `dyx_failures` separates those from retryable cases.
+- Videos deleted or restricted upstream return 404/403 and cannot be recovered; `sv_failures` separates those from retryable cases.
 - Cloud engines cost money on your own account, and a batch stops itself when the provider reports an account problem instead of burning the whole queue.
 
 ## CLI (headless)
@@ -177,18 +181,18 @@ The same engine runs without DSH:
 
 ```sh
 export PYTHONPATH=<plugin>/engine
-python -m dyx --home ~/.dsh-douyin sync <sec_uid> --limit 30
-python -m dyx --home ~/.dsh-douyin download --author <sec_uid> --limit 10
-python -m dyx --home ~/.dsh-douyin transcribe --author <sec_uid> --engine dashscope
-python -m dyx --home ~/.dsh-douyin export --author <sec_uid> --formats md srt --merge
-python -m dyx --home ~/.dsh-douyin failures --author <sec_uid>
+python -m shortvideo --home ~/.dsh-shortvideo sync <sec_uid> --limit 30
+python -m shortvideo --home ~/.dsh-shortvideo download --author <sec_uid> --limit 10
+python -m shortvideo --home ~/.dsh-shortvideo transcribe --author <sec_uid> --engine dashscope
+python -m shortvideo --home ~/.dsh-shortvideo export --author <sec_uid> --formats md srt --merge
+python -m shortvideo --home ~/.dsh-shortvideo failures --author <sec_uid>
 ```
 
 Every command prints a single JSON object on stdout; progress goes to stderr. Exit code is 0 on success, 1 on a handled error, 2 on a usage error.
 
 ## MCP
 
-`plugin/engine/dyx/mcp.py` is a stdio MCP server exposing eight of the same operations (`douyin_run`, `douyin_sync`, `douyin_download`, `douyin_transcribe`, `douyin_export`, `douyin_library`, `douyin_failures`, `douyin_settings`). See `mcp/README.md` for a Claude Desktop or DSH configuration snippet.
+`plugin/engine/shortvideo/mcp.py` is a stdio MCP server exposing eight of the same operations (`shortvideo_run`, `shortvideo_sync`, `shortvideo_download`, `shortvideo_transcribe`, `shortvideo_export`, `shortvideo_library`, `shortvideo_failures`, `shortvideo_settings`). See `mcp/README.md` for a Claude Desktop or DSH configuration snippet.
 
 ## Versioning
 

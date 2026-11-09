@@ -6,7 +6,7 @@ import json
 import os
 import time
 
-from .util import DyxError, fmt_ts, human_duration, slugify
+from .util import ShortVideoError, fmt_ts, human_duration, slugify
 
 SUPPORTED = ("md", "txt", "srt", "vtt", "json", "html", "docx")
 
@@ -114,6 +114,28 @@ def _iso(ts: int | None) -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime(int(ts)))
 
 
+
+def video_url(video: dict) -> str:
+    """Best public URL for the video, whatever platform it came from."""
+    for key in ("share_url", "url", "note_url"):
+        v = (video.get(key) or "").strip()
+        if v.startswith("http"):
+            return v
+    raw = {}
+    try:
+        raw = json.loads(video.get("raw_json") or "{}")
+    except Exception:  # noqa: BLE001
+        pass
+    for holder in (raw, (raw.get("share_info") or {})):
+        if isinstance(holder, dict):
+            v = holder.get("share_url") or holder.get("url") or ""
+            if isinstance(v, str) and v.startswith("http"):
+                return v
+    aid = video.get("aweme_id") or ""
+    if (video.get("platform") or "").lower() in ("xiaohongshu", "xhs", "red"):
+        return f"https://www.xiaohongshu.com/explore/{aid}"
+    return f"https://www.douyin.com/video/{aid}"
+
 def front_matter(video: dict, transcript: dict, include_stats: bool = False) -> str:
     stats = {}
     try:
@@ -124,7 +146,7 @@ def front_matter(video: dict, transcript: dict, include_stats: bool = False) -> 
     lines = ["---"]
     lines.append(f"title: {_yaml_escape(video.get('desc') or video['aweme_id'])}")
     lines.append(f"aweme_id: {_yaml_escape(video['aweme_id'])}")
-    lines.append(f"url: {_yaml_escape('https://www.douyin.com/video/' + video['aweme_id'])}")
+    lines.append(f"url: {_yaml_escape(video_url(video))}")
     lines.append(f"author: {_yaml_escape(video.get('author_name') or '')}")
     raw = {}
     try:
@@ -181,7 +203,7 @@ def render_md(video: dict, transcript: dict, cfg) -> str:
         meta.append(when)
     meta.append(human_duration(video.get("duration_ms")))
     if _with_link(cfg):
-        meta.append(f"[原视频](https://www.douyin.com/video/{video['aweme_id']})")
+        meta.append(f"[原视频]({video_url(video)})")
     parts.append("> " + " · ".join([m for m in meta if m]))
     parts.append("")
     if _with_stats(cfg):
@@ -203,7 +225,7 @@ def render_txt(video: dict, transcript: dict, cfg) -> str:
                        replacements=cfg.get("asr.replacements"))
     head = [video.get("desc") or video["aweme_id"], f"作者: {video.get('author_name') or ''}"]
     if _with_link(cfg):
-        head.append(f"链接: https://www.douyin.com/video/{video['aweme_id']}")
+        head.append(f"链接: {video_url(video)}")
     if _with_published(cfg) and published_on(video):
         head.append(f"发布: {published_on(video)}")
     if _with_stats(cfg):
@@ -267,7 +289,7 @@ def render_html(video: dict, transcript: dict, cfg) -> str:
         for p in paras)
     _wm = [html.escape(video.get('author_name') or ''), human_duration(video.get('duration_ms'))]
     if _with_link(cfg):
-        _wm.append(f'<a href="https://www.douyin.com/video/{video["aweme_id"]}">原视频</a>')
+        _wm.append(f'<a href="{video_url(video)}">原视频</a>')
     web_meta = " · ".join([x for x in _wm if x])
     stats_block = ""
     if _with_stats(cfg) and _stats_line(video, cfg):
@@ -298,7 +320,7 @@ def render_docx(video: dict, transcript: dict, cfg, path: str) -> str:
         from docx import Document
         from docx.shared import Pt
     except ImportError as e:
-        raise DyxError("未安装 python-docx", code="dep_missing",
+        raise ShortVideoError("未安装 python-docx", code="dep_missing",
                        hint="pip install python-docx") from e
     gap = float(cfg.get("export.paragraphGapSec") or 2.0)
     paras = paragraphs(transcript.get("segments") or [], gap=gap,
@@ -307,7 +329,7 @@ def render_docx(video: dict, transcript: dict, cfg, path: str) -> str:
     doc.add_heading((video.get("desc") or video["aweme_id"]).split("\n")[0][:80], level=1)
     meta_text = f"{video.get('author_name') or ''} · {human_duration(video.get('duration_ms'))}"
     if _with_link(cfg):
-        meta_text += f" · https://www.douyin.com/video/{video['aweme_id']}"
+        meta_text += " · " + video_url(video)
     meta = doc.add_paragraph(meta_text)
     meta.runs[0].font.size = Pt(9)
     if _with_stats(cfg):
@@ -438,14 +460,26 @@ def export_one(cfg, video: dict, transcript: dict, formats: list[str],
         else (os.path.dirname(video.get("file_path") or "") or cfg.output_dir)
     )
     stem = os.path.splitext(os.path.basename(video.get("file_path") or ""))[0]
+    aid = str(video.get("aweme_id") or "")
+    # 文件名里没有 id 就重建，否则同名作品会互相覆盖
+    if not stem or (aid and aid not in stem):
+        day = ""
+        try:
+            ct = float(video.get("create_time") or 0)
+            if ct > 0:
+                from datetime import datetime, timezone, timedelta
+                day = datetime.fromtimestamp(ct, timezone(timedelta(hours=8))).strftime("%Y%m%d")
+        except Exception:
+            day = ""
+        stem = "_".join([x for x in (day, aid, slugify(video.get("desc") or "", 40)) if x])
     if not stem:
-        stem = f"{video['aweme_id']}_{slugify(video.get('desc') or '', 40)}"
+        stem = aid or "video"
     os.makedirs(base, exist_ok=True)
     written = []
     for fmt in formats:
         fmt = fmt.lower().strip()
         if fmt not in SUPPORTED:
-            raise DyxError(f"不支持的导出格式: {fmt}", code="bad_format",
+            raise ShortVideoError(f"不支持的导出格式: {fmt}", code="bad_format",
                            hint=f"可选：{', '.join(SUPPORTED)}")
         # 多格式导出：每种格式各占一个文件夹（md/ txt/ srt/ …），找起来清爽
         folder = os.path.join(base, fmt) if out_dir else base
@@ -578,9 +612,25 @@ def _docx_document(cfg=None):
 MERGED_FORMATS = ("md", "txt", "html", "docx")
 
 
-def _video_title(video: dict) -> str:
+def _video_title(video: dict, transcript: dict | None = None) -> str:
     desc = (video.get("desc") or "").strip().split("\n")[0].strip()
-    return desc or str(video.get("aweme_id") or "未命名")
+    if desc:
+        return desc
+    tags = video.get("tags") or []
+    if isinstance(tags, str):
+        try:
+            import json as _json
+            tags = _json.loads(tags)
+        except Exception:  # noqa: BLE001
+            tags = [t for t in tags.replace("#", " ").split() if t]
+    if tags:
+        return " ".join("#" + str(t).lstrip("#") for t in tags[:3])
+    # 没有标题（小红书常见）时用正文首句当标题
+    text = ((transcript or {}).get("text") or "").strip()
+    if text:
+        head = text.split("\n")[0].strip()
+        return (head[:48] + "…") if len(head) > 48 else head
+    return str(video.get("aweme_id") or "未命名")
 
 
 def _section_paragraphs(video: dict, transcript: dict, cfg) -> list[dict]:
@@ -595,8 +645,9 @@ def _total_seconds(items) -> float:
     total = 0.0
     for item in items:
         tr = item.get("transcript") or {}
-        total += float(tr.get("audio_seconds") or 0) or (
-            float((item.get("video") or {}).get("duration_ms") or 0) / 1000.0)
+        total += (float(tr.get("audio_seconds") or 0)
+                  or float(tr.get("duration") or 0)
+                  or (float((item.get("video") or {}).get("duration_ms") or 0) / 1000.0))
     return total
 
 
@@ -635,15 +686,17 @@ def merge_markdown(items, title, cfg) -> str:
     out = [_merged_head(items, title, cfg)]
     for i, item in enumerate(items, 1):
         v = item.get("video") or {}
-        out.append(f"## {i}. {_video_title(v)}")
+        t = item.get("transcript") or {}
+        out.append(f"## {i}. {_video_title(v, t)}")
         out.append("")
         meta = []
         if v.get("aweme_id") and _with_link(cfg):
-            meta.append(f"[原视频](https://www.douyin.com/video/{v['aweme_id']})")
+            meta.append(f"[原视频]({video_url(v)})")
         if _with_published(cfg) and published_on(v):
             meta.append(published_on(v))
-        if v.get("duration_ms"):
-            meta.append(human_duration(v["duration_ms"]))
+        _dur_ms = float(v.get("duration_ms") or 0) or float((t.get("duration") or 0) * 1000.0)
+        if _dur_ms:
+            meta.append(human_duration(_dur_ms))
         if _with_stats(cfg):
             line = _stats_line(v, cfg)
             if line:
@@ -664,8 +717,9 @@ def merge_text(items, title, cfg) -> str:
     out = [title, f"共 {len(items)} 条 · 总时长 {human_duration(_total_seconds(items) * 1000.0)}", ""]
     for i, item in enumerate(items, 1):
         v = item.get("video") or {}
+        t = item.get("transcript") or {}
         out.append(f"{'=' * 60}")
-        out.append(f"{i}. {_video_title(v)}")
+        out.append(f"{i}. {_video_title(v, t)}")
         out.append(f"{'=' * 60}")
         for para in _section_paragraphs(v, item.get("transcript") or {}, cfg):
             if _ts_on(cfg):
@@ -693,10 +747,11 @@ def merge_html(items, title, cfg) -> str:
     ]
     for i, item in enumerate(items, 1):
         v = item.get("video") or {}
-        parts.append(f"<h2 id=\"v{i}\">{i}. {escape(_video_title(v))}</h2>")
+        t = item.get("transcript") or {}
+        parts.append(f"<h2 id=\"v{i}\">{i}. {escape(_video_title(v, t))}</h2>")
         if v.get("aweme_id") and _with_link(cfg):
             parts.append(
-                f"<p class=\"meta\"><a href=\"https://www.douyin.com/video/{v['aweme_id']}\">原视频</a></p>"
+                f"<p class=\"meta\"><a href=\"{escape(video_url(v))}\">原视频</a></p>"
             )
         for para in _section_paragraphs(v, item.get("transcript") or {}, cfg):
             if _ts_on(cfg):
@@ -714,9 +769,10 @@ def merge_docx(items, title, cfg, path: str) -> None:
     doc.add_heading(title, level=0)
     for i, item in enumerate(items, 1):
         v = item.get("video") or {}
-        doc.add_heading(f"{i}. {_video_title(v)}", level=2)
+        t = item.get("transcript") or {}
+        doc.add_heading(f"{i}. {_video_title(v, t)}", level=2)
         if v.get("aweme_id") and _with_link(cfg):
-            doc.add_paragraph(f"https://www.douyin.com/video/{v['aweme_id']}")
+            doc.add_paragraph(video_url(v))
         for para in _section_paragraphs(v, item.get("transcript") or {}, cfg):
             doc.add_paragraph(
                 f"[{fmt_ts(para['start'], 'clock')}] {para['text']}" if _ts_on(cfg)
@@ -738,7 +794,7 @@ def export_merged(cfg, items: list[dict], formats: list[str], out_dir: str | Non
             patched.append({"video": item.get("video"), "transcript": tr})
         items = patched
     if not items:
-        raise DyxError("没有可合并的转写结果", code="nothing_to_merge",
+        raise ShortVideoError("没有可合并的转写结果", code="nothing_to_merge",
                        hint="先运行转写，或去掉合并选项。")
     items = _ordered_items(items, cfg)
     base = os.path.join(out_dir, "export", "合集") if out_dir else cfg.output_dir
@@ -749,7 +805,7 @@ def export_merged(cfg, items: list[dict], formats: list[str], out_dir: str | Non
     for fmt in formats:
         fmt = str(fmt).lower().strip()
         if fmt not in MERGED_FORMATS:
-            raise DyxError(f"合并导出不支持 {fmt}", code="bad_format",
+            raise ShortVideoError(f"合并导出不支持 {fmt}", code="bad_format",
                            hint=f"合并导出可选：{', '.join(MERGED_FORMATS)}")
         path = _free_path(base, slugify(name, 60), fmt)
         try:

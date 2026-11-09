@@ -25,10 +25,10 @@ DESKTOP_UA = (
 )
 
 
-class DyxError(Exception):
+class ShortVideoError(Exception):
     """Base error carrying a machine-readable code."""
 
-    def __init__(self, message: str, code: str = "dyx_error", hint: str = ""):
+    def __init__(self, message: str, code: str = "sv_error", hint: str = ""):
         super().__init__(message)
         self.code = code
         self.hint = hint
@@ -40,12 +40,12 @@ class DyxError(Exception):
         return d
 
 
-class LoginRequired(DyxError):
+class LoginRequired(ShortVideoError):
     def __init__(self, what: str):
         super().__init__(
             f"{what} 需要登录态",
             code="login_required",
-            hint="运行 dyx_login 工具，在打开的浏览器里用任意抖音账号扫码登录一次即可（不需要作者本人账号）。",
+            hint="运行 sv_login 工具，在打开的浏览器里用任意抖音账号扫码登录一次即可（不需要作者本人账号）。",
         )
 
 
@@ -103,15 +103,15 @@ def find_ffmpeg(configured: str | None = None) -> tuple[str, str]:
     extras += [r"D:\Tools\bin\ffmpeg.exe", "/usr/bin/ffmpeg", "/usr/local/bin/ffmpeg"]
     ff = which("ffmpeg", extras)
     if not ff:
-        raise DyxError(
+        raise ShortVideoError(
             "找不到 ffmpeg",
             code="ffmpeg_missing",
-            hint="安装 ffmpeg 并加入 PATH，或在 dyx_settings 里设置 ffmpegPath。",
+            hint="安装 ffmpeg 并加入 PATH，或在 sv_settings 里设置 ffmpegPath。",
         )
     base = os.path.dirname(ff)
     fp = which("ffprobe", [configured.replace("ffmpeg", "ffprobe") if configured else "", os.path.join(base, "ffprobe.exe"), os.path.join(base, "ffprobe")])
     if not fp:
-        raise DyxError("找不到 ffprobe（应与 ffmpeg 同目录）", code="ffprobe_missing")
+        raise ShortVideoError("找不到 ffprobe（应与 ffmpeg 同目录）", code="ffprobe_missing")
     return ff, fp
 
 
@@ -131,7 +131,7 @@ def ffprobe_json(ffprobe: str, path: str) -> dict:
     p = run([ffprobe, "-v", "error", "-print_format", "json",
              "-show_format", "-show_streams", path], timeout=120)
     if p.returncode != 0:
-        raise DyxError(f"ffprobe 失败: {p.stderr.strip()[:300]}", code="probe_failed")
+        raise ShortVideoError(f"ffprobe 失败: {p.stderr.strip()[:300]}", code="probe_failed")
     return json.loads(p.stdout or "{}")
 
 
@@ -156,7 +156,7 @@ def http_get(url: str, headers: dict | None = None, timeout: int = 60,
         except Exception as e:  # noqa: BLE001
             last = e
             time.sleep(1.5 * (attempt + 1))
-    raise DyxError(f"下载失败 {url[:120]}: {last}", code="http_failed")
+    raise ShortVideoError(f"下载失败 {url[:120]}: {last}", code="http_failed")
 
 
 def http_download(url: str, dest: str, headers: dict | None = None,

@@ -10,6 +10,16 @@ from __future__ import annotations
 # 单位统一为「元 / 音频小时」，方便横向比较。None = 取决端点或用量，见 note。
 ENGINES: list[dict] = [
     {
+        "id": "official",
+        "label": "平台官方字幕（小红书中文轨）",
+        "location": "cloud",
+        "yuanPerHour": 0.0,
+        "freeQuota": "不限（平台自带）",
+        "timestamps": "句级（字幕自带时间轴）",
+        "needs": ["pip install xhshow", "小红书登录一次（sv_login platform=xiaohongshu）"],
+        "note": "逐字准确、零成本；只有平台提供了字幕的笔记才有，缺失时按 asr.officialFallback 回落。",
+    },
+    {
         "id": "sensevoice",
         "label": "SenseVoice（本地，sherpa-onnx）",
         "location": "local",

@@ -4,7 +4,7 @@
 长任务（下载/转写/导出/同步）在跑的时候，把「做到第几个、总共几个、失败几个、
 每秒几个、还要多久」写成一个 JSON 文件；Web 面板读它画进度条，不用解析日志。
 
-路径来自环境变量 ``DY_PROGRESS_FILE``（由 Host 侧的 startJob 注入）。
+路径来自环境变量 ``SV_PROGRESS_FILE``（由 Host 侧的 startJob 注入）。
 没设就没开销：写完即返回。
 """
 from __future__ import annotations
@@ -13,7 +13,7 @@ import json
 import os
 import time
 
-KEY = "DY_PROGRESS_FILE"
+KEY = "SV_PROGRESS_FILE"
 
 
 def _path() -> str:

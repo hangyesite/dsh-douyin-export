@@ -43,18 +43,18 @@ ok('locale 元数据齐全')
 
 // 6) 对外发布不能出现预置厂商名
 for (const word of ['fanfan', 'aifan', '爱饭']) {
-  if (pkg.description.toLowerCase().includes(word) || read('skills/douyin-export/SKILL.md').includes(word)) fail('出现了厂商名：' + word)
+  if (pkg.description.toLowerCase().includes(word) || read('skills/shortvideo-export/SKILL.md').includes(word)) fail('出现了厂商名：' + word)
 }
 ok('未出现预置厂商名')
 
-// 7) MCP 变体的 skill 必须存在，并且用 MCP 工具名（douyin_*），不要混进 DSH 的 dyx_*
+// 7) MCP 变体的 skill 必须存在，并且用 MCP 工具名（shortvideo_*），不要混进 DSH 的 sv_*
 const mcpSkillPath = path.join(root, 'mcp', 'SKILL.md')
 if (!fs.existsSync(mcpSkillPath)) fail('缺少 mcp/SKILL.md（给非 DSH 的 MCP 客户端用）')
 else {
   const text = fs.readFileSync(mcpSkillPath, 'utf8')
-  if (!text.includes('douyin_run')) fail('mcp/SKILL.md 没提到 douyin_run')
-  else if (/\bdyx_run\b/.test(text)) fail('mcp/SKILL.md 出现了 dyx_run')
-  else ok('mcp/SKILL.md 使用 douyin_* 工具名')
+  if (!text.includes('shortvideo_run')) fail('mcp/SKILL.md 没提到 shortvideo_run')
+  else if (/\bsv_run\b/.test(text)) fail('mcp/SKILL.md 出现了 sv_run')
+  else ok('mcp/SKILL.md 使用 shortvideo_* 工具名')
 }
 
 console.log(bad ? `\n${bad} 项检查未通过` : '\n全部检查通过')

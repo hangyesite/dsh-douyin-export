@@ -1,13 +1,13 @@
 ---
-name: douyin-export
-description: 抖音视频下载、作者主页增量同步、语音转写、AI 术语校对与多格式排版导出（本地 SenseVoice / faster-whisper、OpenAI 兼容、阿里云百炼、豆包火山引擎四种转写引擎可选）。
-whenToUse: 用户给出抖音作品链接、分享口令、作品 ID、作者主页链接，或要求把已下载的视频转成文字、纠正转写错字、导出 Markdown/SRT/DOCX/合集，或设置定时增量同步时使用。
+name: shortvideo-export
+description: 抖音与小红书视频下载、作者主页增量同步、语音转写、AI 术语校对与多格式排版导出（本地 SenseVoice / faster-whisper、OpenAI 兼容、阿里云百炼、豆包火山引擎、小红书平台官方字幕五种转写引擎可选）。
+whenToUse: 用户给出抖音或小红书作品链接、分享口令、作品 ID、作者主页链接，或要求把已下载的视频转成文字、纠正转写错字、导出 Markdown/SRT/DOCX/合集，或设置定时增量同步时使用。
 ---
 
 > Not running inside DSH? Use the framework-neutral MCP variant instead:
-> [`mcp/SKILL.md`](../../mcp/SKILL.md) — same capabilities with `douyin_*` tool names.
+> [`mcp/SKILL.md`](../../mcp/SKILL.md) — same capabilities with `shortvideo_*` tool names.
 
-# 抖音导出
+# 短视频导出
 
 这个插件把「抖音无水印下载 → 语音转写 → 排版导出」串成一条流水线，所有产出落在任务目录 `<home>/tasks/<taskId>/` 下。
 
@@ -15,27 +15,28 @@ whenToUse: 用户给出抖音作品链接、分享口令、作品 ID、作者主
 
 | 用户说的话 | 调用 |
 |---|---|
-| 粘一个/多个链接、分享口令、作品 ID、作者主页链接，或混着给 | `dyx_run`（`target` 多行文本，粘什么都能认） |
-| 只要列表/元数据，先不下载 | `dyx_sync` |
-| 只要下载，不要转写 | `dyx_download`（`ids` 或 `author`） |
-| 已有视频，要转文字 | `dyx_transcribe`（`ids`/`author`/`limit`/`engine`/`force`） |
-| 已有转写，要导出文件 | `dyx_export`（`formats`、`merge`、`statsFields`、`withLink`、`mergeOrder`） |
-| 看库里有什么、进度如何 | `dyx_library`（`stats`/`authors`/`videos`） |
-| 转写有同音错字、要按术语纠正 | `dyx_polish`（`show`/`sample`/`accept`/`acceptLocal`/`applyOnly`/`reset`） |
-| 失败了多少、为什么失败 | `dyx_failures` |
-| 重试可抢救的失败 | `dyx_download` 之前先用 `dyx_failures` 判断，永久失败（404/403）不要重试 |
-| 改配置、装本地模型、看引擎与价格 | `dyx_settings`（`get`/`set`/`install-model`/`engines`） |
-| 需要登录（超过一页的旧作品、私密内容） | `dyx_login`（弹出二维码，用户扫码一次即可，之后复用 profile） |
-| 查询后台任务 | `dyx_job`（`list`/`status`/`cancel`） |
-| 让某个作者每天自动同步新作品 | `dyx_subscribe`（`action`=`create`/`list`/`delete`，`author`，可选 `rrule`/`download`/`transcribe`） |
+| 粘一个/多个链接、分享口令、作品 ID、作者主页链接，或混着给 | `sv_run`（`target` 多行文本，粘什么都能认） |
+| 只要列表/元数据，先不下载 | `sv_sync` |
+| 只要下载，不要转写 | `sv_download`（`ids` 或 `author`） |
+| 已有视频，要转文字 | `sv_transcribe`（`ids`/`author`/`limit`/`engine`/`force`） |
+| 已有转写，要导出文件 | `sv_export`（`formats`、`merge`、`statsFields`、`withLink`、`mergeOrder`） |
+| 看库里有什么、进度如何 | `sv_library`（`stats`/`authors`/`videos`） |
+| 转写有同音错字、要按术语纠正 | `sv_polish`（`show`/`sample`/`accept`/`acceptLocal`/`applyOnly`/`reset`） |
+| 失败了多少、为什么失败 | `sv_failures` |
+| 重试可抢救的失败 | `sv_download` 之前先用 `sv_failures` 判断，永久失败（404/403）不要重试 |
+| 改配置、装本地模型、看引擎与价格 | `sv_settings`（`get`/`set`/`install-model`/`engines`） |
+| 需要登录（超过一页的旧作品、私密内容） | `sv_login`（弹出二维码，用户扫码一次即可，之后复用 profile） |
+| 查询后台任务 | `sv_job`（`list`/`status`/`cancel`） |
+| 让某个作者每天自动同步新作品 | `sv_subscribe`（`action`=`create`/`list`/`delete`，`author`，可选 `rrule`/`download`/`transcribe`） |
 
 ## 规则
 
-1. **不要自己编造 aweme_id 或 sec_uid**。用户没给全就调用 `dyx_sync`/`dyx_library` 去查，或直接问用户。
-2. **作者默认增量**：`dyx_sync` / `dyx_run` 遇到库里已有的作品就停（`full: true` 才全量重扫）。用户说「更新一下」就是增量。
+1. **不要自己编造 aweme_id 或 sec_uid**。用户没给全就调用 `sv_sync`/`sv_library` 去查，或直接问用户。
+2. **作者默认增量**：`sv_sync` / `sv_run` 遇到库里已有的作品就停（`full: true` 才全量重扫）。用户说「更新一下」就是增量。
 3. **长任务走后台**：作者全量同步、批量下载、批量转写、合集导出都设 `background: true`，然后用一句话告诉用户在面板「任务」页看进度；不要在前台等。
-4. **价格不主动报**：插件界面不显示价格，用户问成本时才用 `dyx_settings action="engines"` 查，并说明「按你自己账号的计费走」。
-5. **四家引擎平等**：不要替用户选引擎。用户没说就用当前配置；用户问「哪个好」就客观列出时间戳能力/是否需要 Key/是否本机跑，不推荐。
+4. **价格不主动报**：插件界面不显示价格，用户问成本时才用 `sv_settings action="engines"` 查，并说明「按你自己账号的计费走」。
+5. **各引擎平等**：不要替用户选引擎。用户没说就用当前配置；用户问「哪个好」就客观列出时间戳能力/是否需要 Key/是否本机跑，不推荐。
+   例外：`official`（平台官方字幕）**只能用于小红书作品**，抖音任务不能选；选错会报 `engine_platform_mismatch`。
 6. **危险操作先确认**：删除任务、清空库、覆盖已有导出、把私人视频外发，先走 `douyin.confirm` 动作卡（见下），用户点「确认执行」后再做。
 7. **不写死个人信息**：不要把作者的 sec_uid、用户本机路径、任何 Key 写进回复正文或文件内容里，除非用户明确要求写进某个文件。
 
@@ -68,7 +69,7 @@ whenToUse: 用户给出抖音作品链接、分享口令、作品 ID、作者主
 
 ## 校对（AI 术语纠正）
 
-`dyx_polish` 只改**导出用的文本**，不重跑 ASR、不动时间戳；原始转写一直保留。
+`sv_polish` 只改**导出用的文本**，不重跑 ASR、不动时间戳；原始转写一直保留。
 
 - **`show`**：看现有术语表、候选、逐处修正。
 - **`sample`**：抽样若干条代表作，让独立的 chat 模型挑同音错字，生成「错→对」候选。抽样不逐条全文跑，成本可控。

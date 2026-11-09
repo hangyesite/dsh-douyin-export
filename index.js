@@ -2,9 +2,9 @@
  * Douyin export — a Host-only Cordis plugin.
  *
  * The plugin owns no media logic itself: it registers agent tools that drive a
- * bundled Python engine (`engine/dyx`) as a child process and turn the engine's
+ * bundled Python engine (`engine/shortvideo`) as a child process and turn the engine's
  * single JSON result into the tool's output. Every long job can also be run in
- * the background and polled with `dyx_job`.
+ * the background and polled with `sv_job`.
  *
  * Why a child process: metadata has to come from a real headed Chrome session
  * (Playwright), and transcription needs heavy native wheels. Keeping that in
@@ -21,7 +21,7 @@ import { registerSkills } from './skills.js'
 import { registerActionKinds } from './action-cards.js'
 import { createPolishHost } from './polish-host.js'
 
-export const name = 'douyin-export'
+export const name = 'shortvideo-export'
 export const inject = ['tools', 'skills', 'llm']
 
 const PKG_DIR = path.dirname(fileURLToPath(import.meta.url))
@@ -116,15 +116,15 @@ const renderSummary = (_args, value) => [{ type: 'text', text: value.summary }]
 function resolveHome(config) {
   const fromConfig = config && typeof config.home === 'string' ? config.home.trim() : ''
   if (fromConfig) return fromConfig
-  const fromEnv = (process.env.DY_DOUYIN_HOME || '').trim()
+  const fromEnv = (process.env.SV_HOME || '').trim()
   if (fromEnv) return fromEnv
-  return path.join(os.homedir(), '.dsh-douyin')
+  return path.join(os.homedir(), '.dsh-shortvideo')
 }
 
 function pythonCandidates(config) {
   const pinned = [
     config && typeof config.python === 'string' ? config.python.trim() : '',
-    (process.env.DY_PYTHON || '').trim(),
+    (process.env.SV_PYTHON || '').trim(),
   ].filter(Boolean)
   const fallback = process.platform === 'win32' ? ['python', 'py', 'python3'] : ['python3', 'python']
   return [...new Set([...pinned, ...fallback])]
@@ -139,7 +139,7 @@ function childEnv() {
 /** Spawn the engine, retrying the next interpreter when the current one is absent. */
 function spawnEngine(config, argv, options = {}) {
   const home = resolveHome(config)
-  const args = ['-X', 'utf8', '-m', 'dyx', '--home', home, ...argv]
+  const args = ['-X', 'utf8', '-m', 'shortvideo', '--home', home, ...argv]
   const candidates = pythonCandidates(config)
   return new Promise((resolve, reject) => {
     let index = 0
@@ -204,7 +204,7 @@ async function runEngine(config, argv, options = {}) {
   const code = await new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       try { child.kill('SIGKILL') } catch { /* already gone */ }
-      reject(new Error(`引擎执行超时（${Math.round(timeoutMs / 1000)}s）。长任务请传 background: true，再用 dyx_job 轮询。`))
+      reject(new Error(`引擎执行超时（${Math.round(timeoutMs / 1000)}s）。长任务请传 background: true，再用 sv_job 轮询。`))
     }, timeoutMs)
     child.once('close', (value) => { clearTimeout(timer); resolve(value) })
   })
@@ -237,7 +237,7 @@ function startJob(config, argv, label) {
     /* 上一轮没留进度文件是正常情况 */
   }
   const home = resolveHome(config)
-  const args = ['-X', 'utf8', '-m', 'dyx', '--home', home, '--log-file', logPath, ...argv]
+  const args = ['-X', 'utf8', '-m', 'shortvideo', '--home', home, '--log-file', logPath, ...argv]
   const out = fs.openSync(logPath, 'a')
   const candidates = pythonCandidates(config)
   let child = null
@@ -246,7 +246,7 @@ function startJob(config, argv, label) {
     try {
       child = spawn(exe, args, {
         cwd: ENGINE_DIR,
-        env: { ...childEnv(), DY_PROGRESS_FILE: progressPath },
+        env: { ...childEnv(), SV_PROGRESS_FILE: progressPath },
         detached: true,
         windowsHide: true,
         stdio: ['ignore', out, out],
@@ -508,7 +508,7 @@ async function runHeavy(config, argv, { label, background, track }) {
     return {
       ok: true,
       summary: `已在后台开始：${label}（任务 ${task ? task.id : meta.id}，进程 ${meta.pid}）。`
-        + (task ? '到面板「任务」页可以看到它的进度与产出目录。' : '用 dyx_job 查看进度。'),
+        + (task ? '到面板「任务」页可以看到它的进度与产出目录。' : '用 sv_job 查看进度。'),
       data: { ...meta, taskId: task ? task.id : null },
     }
   }
@@ -555,7 +555,7 @@ export function apply(ctx, config = {}) {
   const defaultEngine = typeof config.engine === 'string' ? config.engine : ''
   const defaultFormats = listify(config.formats)
 
-  ctx.logger?.info?.(`[douyin-export] engine=${ENGINE_DIR} home=${home}`)
+  ctx.logger?.info?.(`[shortvideo-export] engine=${ENGINE_DIR} home=${home}`)
 
   // 把包内 skills/ 注册进 DSH 技能目录，让 Agent 知道什么时候该调这些工具。
   // 服务缺失或注册失败都不影响插件其它能力。
@@ -564,7 +564,7 @@ export function apply(ctx, config = {}) {
     try {
       off = registerSkills(ctx, path.join(PKG_DIR, 'skills'))
     } catch (error) {
-      ctx.logger?.warn?.(`[douyin-export] 技能注册跳过：${String(error)}`)
+      ctx.logger?.warn?.(`[shortvideo-export] 技能注册跳过：${String(error)}`)
     }
     return () => off?.()
   })
@@ -575,13 +575,13 @@ export function apply(ctx, config = {}) {
     try {
       off = registerActionKinds(ctx)
     } catch (error) {
-      ctx.logger?.warn?.(`[douyin-export] 确认卡注册跳过：${String(error)}`)
+      ctx.logger?.warn?.(`[shortvideo-export] 确认卡注册跳过：${String(error)}`)
     }
     return () => off?.()
   })
 
   ctx.tools.register(defineTool({
-    name: 'dyx_run',
+    name: 'sv_run',
     description:
       '一站式处理抖音内容：识别输入 → 抓元数据 → 下载无水印视频 → 转写 → 排版导出。'
       + 'target 支持三种写法，可混合、每行一个：'
@@ -593,9 +593,9 @@ export function apply(ctx, config = {}) {
       target: { type: 'string', required: true, description: '作品链接/ID、作者主页链接、或分享口令；多行文本表示批量，一行一个' },
       limit: { type: 'integer', description: '作者主页模式下最多处理多少个作品' },
       formats: { type: 'array', items: { type: 'string' }, description: '导出格式，可选 md/txt/srt/vtt/json/html/docx' },
-      engine: { type: 'string', description: '转写引擎，五个任选，互不排斥：sensevoice（本地 CPU，0 元）/ faster-whisper（本地，0 元）/ openai（任意 OpenAI 兼容端点，价格随服务商）/ dashscope（阿里百炼，词级时间戳，按 token 约 0.06 元/小时）/ volc（火山豆包，需公网音频 URL，0.8 元/小时）。不传则用配置项 asr.engine。完整对照表见 dyx_settings action=engines。' },
+      engine: { type: 'string', description: '转写引擎，六个任选，互不排斥：sensevoice（本地 CPU，0 元）/ faster-whisper（本地，0 元）/ openai（任意 OpenAI 兼容端点）/ dashscope（阿里百炼，词级时间戳）/ volc（火山豆包，需公网音频 URL）/ official（平台官方字幕，**仅限小红书**，0 元、逐字最准，需 pip install xhshow）。不传则用配置项 asr.engine。完整对照表见 sv_settings action=engines。' },
       full: { type: 'boolean', description: '作者模式全量重扫（默认差量：遇到库里已有的旧作品就停）' },
-      background: { type: 'boolean', description: '设为 true 时放到后台执行，返回任务 ID，用 dyx_job 轮询' },
+      background: { type: 'boolean', description: '设为 true 时放到后台执行，返回任务 ID，用 sv_job 轮询' },
     },
     output: { schema: RESULT_SCHEMA, render: renderSummary },
     execute: async (args) => {
@@ -617,12 +617,14 @@ export function apply(ctx, config = {}) {
   }))
 
   ctx.tools.register(defineTool({
-    name: 'dyx_sync',
+    name: 'sv_sync',
     description:
-      '同步一个抖音作者主页的作品清单到本地库（支持差量：默认遇到已存在的旧作品就停止）。'
+      '同步一个抖音或小红书作者主页的作品清单到本地库（支持差量：默认遇到已存在的旧作品就停止）。'
       + '只抓元数据，不下载视频。第一次会弹出 Chrome 窗口。',
     parameters: {
       author: { type: 'string', required: true, description: '作者主页链接或 sec_uid' },
+      platform: { type: 'string', enum: ['auto', 'douyin', 'xiaohongshu'],
+        description: '平台：auto 自动识别（默认）、douyin、xiaohongshu' },
       limit: { type: 'integer', description: '本次最多抓取多少个新作品（默认不限，靠差量停止）' },
       full: { type: 'boolean', description: 'true 表示全量重扫，不在遇到旧作品时停止' },
       download: { type: 'boolean', description: 'true 表示同步后立刻下载新作品的无水印视频' },
@@ -631,6 +633,7 @@ export function apply(ctx, config = {}) {
     output: { schema: RESULT_SCHEMA, render: renderSummary },
     execute: async (args) => {
       const argv = ['sync', args.author]
+      if (args.platform) argv.push('--platform', String(args.platform))
       if (args.limit) argv.push('--limit', String(args.limit))
       if (args.full) argv.push('--full')
       if (args.download) argv.push('--download')
@@ -649,7 +652,7 @@ export function apply(ctx, config = {}) {
   }))
 
   ctx.tools.register(defineTool({
-    name: 'dyx_download',
+    name: 'sv_download',
     description:
       '下载无水印视频。三种入口可以任选：targets（推荐，粘贴什么都能认：作品链接/纯 ID/作者主页/分享口令，'
       + '一行一个，作者会先抓清单再下载）、ids（已知作品 ID 列表）、author（库里已同步过的作者）。'
@@ -701,15 +704,15 @@ export function apply(ctx, config = {}) {
   }))
 
   ctx.tools.register(defineTool({
-    name: 'dyx_transcribe',
+    name: 'sv_transcribe',
     description:
       '把已下载视频的音轨转写成文字。默认用本地 SenseVoice（CPU int8，无需 GPU，自带标点）；'
-      + '也可选 faster-whisper 或 OpenAI 兼容的云端 API。首次使用云端引擎需要在 dyx_settings 里配置 baseURL/apiKey。',
+      + '也可选 faster-whisper 或 OpenAI 兼容的云端 API。首次使用云端引擎需要在 sv_settings 里配置 baseURL/apiKey。',
     parameters: {
       ids: { type: 'array', items: { type: 'string' }, description: '作品 ID 列表' },
       author: { type: 'string', description: '按作者过滤（主页链接或 sec_uid）' },
       limit: { type: 'integer', description: '最多转写多少个' },
-      engine: { type: 'string', description: '同上：sensevoice / faster-whisper / openai / dashscope / volc，任一' },
+      engine: { type: 'string', description: '同上：sensevoice / faster-whisper / openai / dashscope / volc / official，任一；official（平台官方字幕）仅能用于小红书作品' },
       force: { type: 'boolean', description: 'true 表示覆盖已有转写结果' },
       background: { type: 'boolean', description: '后台执行，返回任务 ID' },
     },
@@ -743,7 +746,7 @@ export function apply(ctx, config = {}) {
   }))
 
   ctx.tools.register(defineTool({
-    name: 'dyx_export',
+    name: 'sv_export',
     description:
       '把转写结果排版导出。默认 Markdown（YAML front-matter + 带 [mm:ss] 时间戳的段落）；'
       + '也可以同时输出 txt/srt/vtt/json/html/docx。'
@@ -802,7 +805,7 @@ export function apply(ctx, config = {}) {
             ? `合集 ${data.mergedCount || 0} 个文件${(data.merged && data.merged[0]) ? `：${data.merged.map((m) => path.basename(m.path)).join('、')}` : ''}。`
             : '')
           + ((data.missingTranscript || []).length
-            ? `另有 ${data.missingTranscript.length} 个还没有转写结果，先运行 dyx_transcribe。`
+            ? `另有 ${data.missingTranscript.length} 个还没有转写结果，先运行 sv_transcribe。`
             : ''),
         data: result.data,
       }
@@ -810,7 +813,7 @@ export function apply(ctx, config = {}) {
   }))
 
   ctx.tools.register(defineTool({
-    name: 'dyx_failures',
+    name: 'sv_failures',
     description:
       '诊断失败原因：把下载失败按 404/403/风控 分类，列出跳过的图集作品、无人声作品，'
       + '并说明历史欠费等一次性问题。只读本地库与日志，不发网络请求。',
@@ -837,7 +840,7 @@ export function apply(ctx, config = {}) {
   }))
 
   ctx.tools.register(defineTool({
-    name: 'dyx_polish',
+    name: 'sv_polish',
     description:
       'AI 校对（可选能力）：抽样把转写稿交给大模型挑同音错字，生成「错→对」术语表，'
       + '再对全库做确定性替换。只改导出用的文本，原始转写照旧保留；不重写正文、不动时间戳。'
@@ -928,7 +931,7 @@ export function apply(ctx, config = {}) {
   }))
 
   ctx.tools.register(defineTool({
-    name: 'dyx_library',
+    name: 'sv_library',
     description: '查看本地库：统计数字、作者列表，或作品清单（可按作者/状态筛选）。',
     parameters: {
       view: { type: 'string', required: true, enum: ['stats', 'authors', 'videos'], description: '要看的内容' },
@@ -970,11 +973,11 @@ export function apply(ctx, config = {}) {
   }))
 
   ctx.tools.register(defineTool({
-    name: 'dyx_settings',
+    name: 'sv_settings',
     description:
       '读写插件设置。可读取当前配置、修改某一项（如输出目录、云端 ASR 的 baseUrl/apiKey/model、ffmpeg 路径）、'
       + '下载本地 SenseVoice 模型，或 action=engines 列出全部转写引擎与其价格。'
-      + '修改后用 dyx_library 或再次运行任务确认生效。',
+      + '修改后用 sv_library 或再次运行任务确认生效。',
     parameters: {
       action: { type: 'string', required: true, enum: ['get', 'set', 'install-model', 'reset', 'engines'], description: '操作；engines = 列出所有转写引擎及价格/时间戳/免费额度' },
       key: { type: 'string', description: 'set 用的点号路径，如 outputDir、asr.openai.baseUrl、asr.openai.apiKey、media.ffmpegPath' },
@@ -1014,17 +1017,20 @@ export function apply(ctx, config = {}) {
   }))
 
   ctx.tools.register(defineTool({
-    name: 'dyx_login',
+    name: 'sv_login',
     description:
-      '可选：在打开的 Chrome 里用任意抖音账号扫码登录，用于之后可能需要的更多访问权限。'
+      '可选：在打开的 Chrome 里用任意账号扫码登录（抖音或小红书），用于之后可能需要的更多访问权限。'
       + '大多数下载和作者主页同步都不需要登录，只有遇到"需要登录"错误时再调用。',
     parameters: {
       waitSeconds: { type: 'integer', description: '等待扫码的秒数，默认 240' },
-      background: { type: 'boolean', description: '后台执行（推荐：扫码期间可以先做别的事），用 dyx_job 查看结果' },
+      platform: { type: 'string', enum: ['douyin', 'xiaohongshu'],
+        description: '要登录的平台，默认 douyin' },
+      background: { type: 'boolean', description: '后台执行（推荐：扫码期间可以先做别的事），用 sv_job 查看结果' },
     },
     output: { schema: RESULT_SCHEMA, render: renderSummary },
     execute: async (args) => {
       const argv = ['login', '--wait', String(args.waitSeconds || 240)]
+      if (args.platform) argv.push('--platform', String(args.platform))
       if (args.background) {
         return runHeavy(config, argv, { label: '等待抖音扫码登录', background: true })
       }
@@ -1034,8 +1040,8 @@ export function apply(ctx, config = {}) {
   }))
 
   ctx.tools.register(defineTool({
-    name: 'dyx_job',
-    description: '查看或取消后台任务。后台任务由 dyx_run / dyx_sync / dyx_download / dyx_transcribe 传 background: true 创建。',
+    name: 'sv_job',
+    description: '查看或取消后台任务。后台任务由 sv_run / sv_sync / sv_download / sv_transcribe 传 background: true 创建。',
     parameters: {
       action: { type: 'string', required: true, enum: ['list', 'status', 'cancel'], description: '操作' },
       id: { type: 'string', description: 'status/cancel 用的任务 ID' },
@@ -1068,9 +1074,9 @@ export function apply(ctx, config = {}) {
   // 定时订阅：把「某个作者的增量同步」注册成 DSH 计划任务，到点由 DSH 起一个会话自动跑。
   // 依赖 Host 的 schedule 服务（DSH 自带）；没有该服务时只报错，不影响其它工具。
   ctx.tools.register(defineTool({
-    name: 'dyx_subscribe',
+    name: 'sv_subscribe',
     description:
-      '把「某个抖音作者的增量同步」注册成 DSH 计划任务：到点 DSH 自动开一个会话跑 dyx_sync，并把结果告诉你。'
+      '把「某个抖音作者的增量同步」注册成 DSH 计划任务：到点 DSH 自动开一个会话跑 sv_sync，并把结果告诉你。'
       + 'action=create 新建（需要 author，可选 rrule/download/transcribe）；action=list 看已有的；action=delete 删除（需要 id）。',
     parameters: {
       action: {
@@ -1099,7 +1105,7 @@ export function apply(ctx, config = {}) {
         schedule = undefined
       }
       if (schedule === undefined) {
-        throw new Error('当前环境没有计划任务服务（schedule），无法使用订阅；可以改用 dyx_sync 手动同步。')
+        throw new Error('当前环境没有计划任务服务（schedule），无法使用订阅；可以改用 sv_sync 手动同步。')
       }
       const action = typeof args.action === 'string' ? args.action : 'create'
 
@@ -1117,7 +1123,7 @@ export function apply(ctx, config = {}) {
           ok: true,
           summary: items.length
             ? items.map((item) => `${item.id}｜${item.title}｜${item.status}｜下次 ${item.scheduledAt}`).join('\n')
-            : '还没有抖音相关的计划任务。用 dyx_subscribe action=create 建一个。',
+            : '还没有抖音相关的计划任务。用 sv_subscribe action=create 建一个。',
           data: { items, total: items.length },
         }
       }
@@ -1143,10 +1149,10 @@ export function apply(ctx, config = {}) {
       const label = given || (author.length > 28 ? `${author.slice(0, 28)}…` : author)
       const prompt = [
         `这是定时任务：抖音作者「${label}」的增量同步。`,
-        `调用 dyx_sync，author 传 ${JSON.stringify(author)}，download 传 ${download ? 'true' : 'false'}，background 传 false。`,
-        transcribe ? '同步完成后接着调用 dyx_transcribe（engine 用当前配置），再调用 dyx_export（formats 用当前配置）把新视频导出。' : '',
-        '完成后用一两句话汇报：新增几条、跳过几条、失败几条（失败按 dyx_failures 的原因分类说）。',
-        '如果返回里带 warning 说被登录墙截断，调用 dyx_login 让用户扫码后再同步一次。',
+        `调用 sv_sync，author 传 ${JSON.stringify(author)}，download 传 ${download ? 'true' : 'false'}，background 传 false。`,
+        transcribe ? '同步完成后接着调用 sv_transcribe（engine 用当前配置），再调用 sv_export（formats 用当前配置）把新视频导出。' : '',
+        '完成后用一两句话汇报：新增几条、跳过几条、失败几条（失败按 sv_failures 的原因分类说）。',
+        '如果返回里带 warning 说被登录墙截断，调用 sv_login 让用户扫码后再同步一次。',
         '这是自动任务，不要反问用户、不要要求确认；没有新作品就直接说「没有新作品」。',
       ].filter(Boolean).join(' ')
 
@@ -1171,9 +1177,13 @@ export function apply(ctx, config = {}) {
     deps: { fs, path, home: () => resolveHome(config), runEngine },
   })
 
-  // Web GUI：/api/douyin/* 路由（没有 webServer 时自动降级为只提供工具）
-  ctx.effect(() =>
-    registerDouyinRoutes(ctx, {
+  // Web GUI routes: register once webServer is ready (it can init after this plugin)
+  ctx.effect(() => {
+    let stopped = false
+    let timer = null
+    let tries = 0
+    let teardown = null
+    const routeDeps = {
       fs,
       path,
       config,
@@ -1185,8 +1195,31 @@ export function apply(ctx, config = {}) {
       listJobs,
       cancelJob,
       polishHost,
-    }),
-  )
+    }
+    const attempt = () => {
+      timer = null
+      if (stopped) return
+      let got = null
+      try {
+        got = registerDouyinRoutes(ctx, routeDeps)
+      } catch (error) {
+        ctx.logger?.warn?.('[shortvideo-export] route registration failed: ' + (error && error.message))
+      }
+      if (typeof got === 'function') {
+        teardown = got
+        ctx.logger?.info?.('[shortvideo-export] web routes registered')
+        return
+      }
+      tries += 1
+      if (tries < 240) timer = setTimeout(attempt, 500)
+    }
+    attempt()
+    return () => {
+      stopped = true
+      if (timer) clearTimeout(timer)
+      if (teardown) { try { teardown() } catch {} }
+    }
+  })
 
-  ctx.logger?.info?.('[douyin-export] 12 tools registered')
+  ctx.logger?.info?.('[shortvideo-export] 12 tools registered')
 }

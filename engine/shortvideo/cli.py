@@ -10,7 +10,7 @@ import traceback
 from . import ops
 from .config import Config
 from .store import Store
-from .util import DyxError, log
+from .util import ShortVideoError, log
 
 LOG_FILE: str | None = None
 
@@ -72,6 +72,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--full", action="store_true", help="全量，不在遇到旧作品时停止")
     s.add_argument("--stop-after-known", type=int, default=25)
     s.add_argument("--download", action="store_true")
+    s.add_argument("--platform", choices=["auto", "douyin", "xiaohongshu"], default="auto")
 
     dl = sub.add_parser("download", help="下载无水印视频")
     dl.add_argument("--ids", nargs="*")
@@ -89,15 +90,15 @@ def build_parser() -> argparse.ArgumentParser:
                     help="转写完成后顺带导出这些格式")
     tr.add_argument("--out", default=None,
                     help="任务目录：转写 JSON 与导出文件都落到这里")
-    tr.add_argument("--with-stats", action="store_true",
+    tr.add_argument("--with-stats", action="store_true", default=None,
                    help="导出文本里补一行互动数据（点赞/评论/转发/收藏）")
-    tr.add_argument("--timestamps", action="store_true",
+    tr.add_argument("--timestamps", action="store_true", default=None,
                    help="导出文本带 [mm:ss] 时间戳（默认不带；JSON 永远有）")
     tr.add_argument("--stats-fields", nargs="*", default=None,
                    help="只导这些互动数据：digg_count comment_count share_count collect_count")
-    tr.add_argument("--published", action="store_true",
+    tr.add_argument("--published", action="store_true", default=None,
                    help="正文里写发布日期")
-    tr.add_argument("--with-link", action="store_true",
+    tr.add_argument("--with-link", action="store_true", default=None,
                    help="正文里写抖音原视频链接（默认不写）")
     tr.add_argument("--merge-order", choices=["asc", "desc"], default=None,
                    help="合集排序：desc 最新在前（默认），asc 最老在前")
@@ -112,15 +113,15 @@ def build_parser() -> argparse.ArgumentParser:
     ex.add_argument("--merge-formats", nargs="*", default=None,
                     help="合集格式：md txt html docx（默认 md）")
     ex.add_argument("--merge-title", default=None, help="合集标题")
-    ex.add_argument("--with-stats", action="store_true",
+    ex.add_argument("--with-stats", action="store_true", default=None,
                    help="导出文本里补一行互动数据（点赞/评论/转发/收藏）")
-    ex.add_argument("--timestamps", action="store_true",
+    ex.add_argument("--timestamps", action="store_true", default=None,
                    help="导出文本带 [mm:ss] 时间戳（默认不带；JSON 永远有）")
     ex.add_argument("--stats-fields", nargs="*", default=None,
                    help="只导这些互动数据：digg_count comment_count share_count collect_count")
-    ex.add_argument("--published", action="store_true",
+    ex.add_argument("--published", action="store_true", default=None,
                    help="正文里写发布日期")
-    ex.add_argument("--with-link", action="store_true",
+    ex.add_argument("--with-link", action="store_true", default=None,
                    help="正文里写抖音原视频链接（默认不写）")
     ex.add_argument("--merge-order", choices=["asc", "desc"], default=None,
                    help="合集排序：desc 最新在前（默认），asc 最老在前")
@@ -147,15 +148,15 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--merge-formats", nargs="*", default=None,
                    help="合集格式：md/txt/html/docx")
     r.add_argument("--merge-title", default=None, help="合集标题")
-    r.add_argument("--with-stats", action="store_true",
+    r.add_argument("--with-stats", action="store_true", default=None,
                    help="导出文本里补一行互动数据（点赞/评论/转发/收藏）")
-    r.add_argument("--timestamps", action="store_true",
+    r.add_argument("--timestamps", action="store_true", default=None,
                    help="导出文本带 [mm:ss] 时间戳（默认不带；JSON 永远有）")
     r.add_argument("--stats-fields", nargs="*", default=None,
                    help="只导这些互动数据：digg_count comment_count share_count collect_count")
-    r.add_argument("--published", action="store_true",
+    r.add_argument("--published", action="store_true", default=None,
                    help="正文里写发布日期")
-    r.add_argument("--with-link", action="store_true",
+    r.add_argument("--with-link", action="store_true", default=None,
                    help="正文里写抖音原视频链接（默认不写）")
     r.add_argument("--merge-order", choices=["asc", "desc"], default=None,
                    help="合集排序：desc 最新在前（默认），asc 最老在前")
@@ -163,6 +164,7 @@ def build_parser() -> argparse.ArgumentParser:
     lg = sub.add_parser("login", help="打开浏览器扫码登录（可选）")
     lg.add_argument("--wait", type=int, default=240)
     lg.add_argument("--qr-out", default=None, help="二维码截图落到这个路径（供 Web 页面显示）")
+    lg.add_argument("--platform", choices=["douyin", "xiaohongshu"], default="douyin")
     lg.add_argument("--status-out", default=None, help="登录状态 JSON 落到这个路径（供轮询）")
 
     sub.add_parser("warm", help="预热浏览器，取得风控 cookie")
@@ -236,11 +238,11 @@ def _export_opts(args) -> dict:
     fields = getattr(args, "stats_fields", None) or []
     if isinstance(fields, str):
         fields = [p for p in fields.replace(",", " ").split() if p]
-    return {"stats": bool(getattr(args, "with_stats", False)),
+    return {"stats": getattr(args, "with_stats", None),
             "statsFields": list(fields),
-            "timestamps": bool(getattr(args, "timestamps", False)),
-            "link": bool(getattr(args, "with_link", False)),
-            "published": bool(getattr(args, "published", False)),
+            "timestamps": getattr(args, "timestamps", None),
+            "link": getattr(args, "with_link", None),
+            "published": getattr(args, "published", None),
             "order": getattr(args, "merge_order", None)}
 
 
@@ -259,7 +261,7 @@ def main(argv: list[str] | None = None) -> int:
                 return 0
             if args.action == "set":
                 if not args.key:
-                    raise DyxError("需要 --key", code="bad_args")
+                    raise ShortVideoError("需要 --key", code="bad_args")
                 value = args.value
                 try:
                     value = json.loads(value) if value is not None else None
@@ -290,13 +292,25 @@ def main(argv: list[str] | None = None) -> int:
         store = Store(cfg.db_path)
 
         if args.cmd == "detail":
-            emit({"ok": True, "result": ops.fetch_one(cfg, store, args.target)})
+            from .fetch_xhs import is_xhs_url
+            if is_xhs_url(args.target):
+                emit({"ok": True, "result": ops.fetch_note_xhs(cfg, store, args.target)})
+            else:
+                emit({"ok": True, "result": ops.fetch_one(cfg, store, args.target)})
 
         elif args.cmd == "sync":
-            emit({"ok": True, "result": ops.sync_author(
-                cfg, store, args.author, limit=args.limit,
-                incremental=not args.full, stop_after_known=args.stop_after_known,
-                download=args.download, cb=None)})
+            from .fetch_xhs import is_xhs_url
+            want = getattr(args, "platform", "auto")
+            if want == "xiaohongshu" or (want == "auto" and is_xhs_url(args.author)):
+                emit({"ok": True, "result": ops.sync_xhs(
+                    cfg, store, args.author, limit=args.limit,
+                    incremental=not args.full, stop_after_known=args.stop_after_known,
+                    download=args.download, cb=None)})
+            else:
+                emit({"ok": True, "result": ops.sync_author(
+                    cfg, store, args.author, limit=args.limit,
+                    incremental=not args.full, stop_after_known=args.stop_after_known,
+                    download=args.download, cb=None)})
 
         elif args.cmd == "download":
             emit({"ok": True, "result": ops.download_many(
@@ -363,11 +377,20 @@ def main(argv: list[str] | None = None) -> int:
                 options=_export_opts(args))})
 
         elif args.cmd == "login":
-            from .browser import BrowserSession
-            with BrowserSession(cfg) as s:
-                s.warm()
-                emit({"ok": True, "result": s.login(args.wait, qr_out=args.qr_out,
-                                                 status_out=args.status_out)})
+            if getattr(args, "platform", "douyin") == "xiaohongshu":
+                from .fetch_xhs import XhsSession
+                with XhsSession(cfg) as s:
+                    emit({"ok": True, "result": s.login(
+                        args.wait,
+                        qr_out=getattr(args, "qr_out", None),
+                        status_out=getattr(args, "status_out", None),
+                    )})
+            else:
+                from .browser import BrowserSession
+                with BrowserSession(cfg) as s:
+                    s.warm()
+                    emit({"ok": True, "result": s.login(args.wait, qr_out=args.qr_out,
+                                                     status_out=args.status_out)})
 
         elif args.cmd == "warm":
             from .browser import BrowserSession
@@ -478,10 +501,10 @@ def main(argv: list[str] | None = None) -> int:
                   "task": args.task, "taskTitle": task_title,
                   "authors": store.list_authors()})
         else:
-            raise DyxError(f"未知命令 {args.cmd}", code="bad_command")
+            raise ShortVideoError(f"未知命令 {args.cmd}", code="bad_command")
         return 0
 
-    except DyxError as e:
+    except ShortVideoError as e:
         emit({"ok": False, "error": e.to_dict()})
         return 2
     except Exception as e:  # noqa: BLE001

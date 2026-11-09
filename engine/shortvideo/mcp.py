@@ -6,7 +6,7 @@
 
 传输：stdio，换行分隔的 JSON-RPC 2.0（MCP stdio 规范）。
 用法：
-    python -X utf8 -m dyx.mcp --home <配置目录>
+    python -X utf8 -m shortvideo.mcp --home <配置目录>
 
 支持的方法：initialize、notifications/initialized、ping、tools/list、tools/call。
 """
@@ -20,12 +20,12 @@ import sys
 
 from . import __version__
 
-SERVER_NAME = "douyin-export"
+SERVER_NAME = "shortvideo-export"
 PROTOCOL_VERSION = "2024-11-05"
 
 TOOLS = [
     {
-        "name": "douyin_run",
+        "name": "shortvideo_run",
         "description": "一站式处理抖音内容：抓元数据 → 下载无水印视频 → 转写 → 排版导出。target 可混粘作品链接/ID/分享口令/作者主页，一行一个。",
         "inputSchema": {
             "type": "object",
@@ -33,7 +33,7 @@ TOOLS = [
                 "target": {"type": "string", "description": "作品链接/ID、作者主页链接、分享口令；多行表示批量"},
                 "limit": {"type": "integer", "description": "作者模式下最多处理多少个作品"},
                 "formats": {"type": "array", "items": {"type": "string"}, "description": "导出格式 md/txt/srt/vtt/json/html/docx"},
-                "engine": {"type": "string", "description": "转写引擎 sensevoice/faster-whisper/openai/dashscope/volc"},
+                "engine": {"type": "string", "description": "转写引擎 sensevoice/faster-whisper/openai/dashscope/volc/official（official=平台官方字幕，仅限小红书）"},
                 "full": {"type": "boolean", "description": "作者模式全量重扫（默认差量）"},
                 "out": {"type": "string", "description": "产物目录（默认配置里的 outputDir）"},
             },
@@ -41,7 +41,7 @@ TOOLS = [
         },
     },
     {
-        "name": "douyin_sync",
+        "name": "shortvideo_sync",
         "description": "只同步某个作者的作品清单到本地库（不下载）。默认增量：遇到库里已有的旧作品就停。",
         "inputSchema": {
             "type": "object",
@@ -55,7 +55,7 @@ TOOLS = [
         },
     },
     {
-        "name": "douyin_download",
+        "name": "shortvideo_download",
         "description": "下载无水印视频。给 ids 或 author 二选一。",
         "inputSchema": {
             "type": "object",
@@ -68,7 +68,7 @@ TOOLS = [
         },
     },
     {
-        "name": "douyin_transcribe",
+        "name": "shortvideo_transcribe",
         "description": "把已下载的视频转写成文字。可用引擎：sensevoice（本地 CPU）/ faster-whisper（本地）/ openai（OpenAI 兼容）/ dashscope（阿里百炼）/ volc（豆包）。",
         "inputSchema": {
             "type": "object",
@@ -83,7 +83,7 @@ TOOLS = [
         },
     },
     {
-        "name": "douyin_export",
+        "name": "shortvideo_export",
         "description": "把转写结果排版导出。支持分条导出与合并合集。",
         "inputSchema": {
             "type": "object",
@@ -98,7 +98,7 @@ TOOLS = [
         },
     },
     {
-        "name": "douyin_polish",
+        "name": "shortvideo_polish",
         "description": "AI 术语校对：抽样让独立 chat 模型挑同音错字，生成「错→对」候选；采纳后只改导出文本，不重跑转写。action=show 看术语表，sample 挖候选，accept 采纳（pairs: [\"错=>正\"]），apply 按现有术语表刷一遍，reset 撤销。",
         "inputSchema": {
             "type": "object",
@@ -112,7 +112,7 @@ TOOLS = [
         },
     },
     {
-        "name": "douyin_library",
+        "name": "shortvideo_library",
         "description": "查看本地库：统计、作者列表或作品清单。",
         "inputSchema": {
             "type": "object",
@@ -126,7 +126,7 @@ TOOLS = [
         },
     },
     {
-        "name": "douyin_failures",
+        "name": "shortvideo_failures",
         "description": "诊断失败原因：下载失败按 404/403/风控 分类，列出跳过的图集与无人声作品，标出可重试的类别。",
         "inputSchema": {
             "type": "object",
@@ -138,7 +138,7 @@ TOOLS = [
         },
     },
     {
-        "name": "douyin_settings",
+        "name": "shortvideo_settings",
         "description": "读写配置：action=get 查看全部配置；set 改一项（key/value）；install-model 下载本地模型；engines 列出全部转写引擎与价格。",
         "inputSchema": {
             "type": "object",
@@ -157,7 +157,7 @@ HOME = ""
 
 
 def _engine_argv() -> list:
-    return [sys.executable, "-X", "utf8", "-m", "dyx", "--home", HOME]
+    return [sys.executable, "-X", "utf8", "-m", "shortvideo", "--home", HOME]
 
 
 def _run_cli(argv: list) -> dict:
@@ -186,7 +186,7 @@ def _build_argv(name: str, args: dict) -> list:
             return ",".join(str(item) for item in value)
         return str(value)
 
-    if name == "douyin_run":
+    if name == "shortvideo_run":
         argv = ["run", str(args.get("target", ""))]
         if args.get("limit"):
             argv += ["--limit", str(int(args["limit"]))]
@@ -200,7 +200,7 @@ def _build_argv(name: str, args: dict) -> list:
             argv += ["--out", str(args["out"])]
         return argv
 
-    if name == "douyin_sync":
+    if name == "shortvideo_sync":
         argv = ["sync", str(args.get("author", ""))]
         if args.get("limit"):
             argv += ["--limit", str(int(args["limit"]))]
@@ -210,7 +210,7 @@ def _build_argv(name: str, args: dict) -> list:
             argv += ["--download"]
         return argv
 
-    if name == "douyin_polish":
+    if name == "shortvideo_polish":
         argv = ["polish"]
         if args.get("author"):
             argv += ["--author", str(args["author"])]
@@ -233,7 +233,7 @@ def _build_argv(name: str, args: dict) -> list:
             argv += ["--show"]
         return argv
 
-    if name == "douyin_download":
+    if name == "shortvideo_download":
         argv = ["download"]
         if args.get("ids"):
             argv += ["--ids", *[str(i) for i in args["ids"]]]
@@ -245,7 +245,7 @@ def _build_argv(name: str, args: dict) -> list:
             argv += ["--out", str(args["out"])]
         return argv
 
-    if name == "douyin_transcribe":
+    if name == "shortvideo_transcribe":
         argv = ["transcribe"]
         if args.get("ids"):
             argv += ["--ids", *[str(i) for i in args["ids"]]]
@@ -261,7 +261,7 @@ def _build_argv(name: str, args: dict) -> list:
             argv += ["--out", str(args["out"])]
         return argv
 
-    if name == "douyin_export":
+    if name == "shortvideo_export":
         argv = ["export"]
         if args.get("ids"):
             argv += ["--ids", *[str(i) for i in args["ids"]]]
@@ -277,7 +277,7 @@ def _build_argv(name: str, args: dict) -> list:
             argv += ["--out", str(args["out"])]
         return argv
 
-    if name == "douyin_library":
+    if name == "shortvideo_library":
         view = str(args.get("view") or "stats")
         if view == "stats":
             return ["library"]
@@ -292,7 +292,7 @@ def _build_argv(name: str, args: dict) -> list:
             argv += ["--offset", str(int(args["offset"]))]
         return argv
 
-    if name == "douyin_failures":
+    if name == "shortvideo_failures":
         argv = ["failures"]
         if args.get("author"):
             argv += ["--author", str(args["author"])]
@@ -302,7 +302,7 @@ def _build_argv(name: str, args: dict) -> list:
             argv += ["--limit", str(int(args["limit"]))]
         return argv
 
-    if name == "douyin_settings":
+    if name == "shortvideo_settings":
         action = str(args.get("action") or "get")
         argv = ["settings", action]
         if action == "set":
@@ -369,7 +369,7 @@ def main(argv=None) -> int:
     if "--home" in argv:
         HOME = argv[argv.index("--home") + 1]
     if not HOME:
-        HOME = os.environ.get("DY_DOUYIN_HOME") or os.path.join(os.path.expanduser("~"), ".dsh-douyin")
+        HOME = os.environ.get("SV_HOME") or os.path.join(os.path.expanduser("~"), ".dsh-shortvideo")
 
     for line in sys.stdin:
         line = line.strip()

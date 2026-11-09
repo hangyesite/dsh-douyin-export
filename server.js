@@ -1,5 +1,5 @@
 /**
- * 抖音导出 —— Web GUI 的 HTTP 接口层。
+ * 短视频导出 —— Web GUI 的 HTTP 接口层。
  *
  * DSH 的 webServer.register({kind, path, handler}) 用的是 **Node 原生**
  * (req: IncomingMessage, res: ServerResponse) 回调，不是 Web `Request/Response`：
@@ -98,21 +98,28 @@ export function registerDouyinRoutes(ctx, deps) {
     server = null
   }
   if (!server || typeof server.register !== 'function') {
-    ctx.logger?.warn?.('抖音导出：没有 webServer 服务，Web 面板不可用（工具接口照常工作）')
-    return () => {}
+    ctx.logger?.info?.('[shortvideo-export] webServer not ready yet, will retry')
+    return null
   }
 
   const home = deps.home()
+  const PLATFORMS = ['douyin', 'xiaohongshu']
   const qrPath = path.join(home, 'login-qr.png')
   const statusPath = path.join(home, 'login-status.json')
+  const qrPathOf = (platform) => path.join(home, `login-qr-${platform || 'douyin'}.png`)
+  const statusPathOf = (platform) => path.join(home, `login-status-${platform || 'douyin'}.json`)
   const jobsPath = path.join(home, 'jobs')
 
-  const readStatus = () => {
-    try {
-      return JSON.parse(fs.readFileSync(statusPath, 'utf8'))
-    } catch {
-      return null
+  const readStatus = (platform) => {
+    const want = platform || 'douyin'
+    for (const file of [statusPathOf(want), ...(want === 'douyin' ? [statusPath] : [])]) {
+      try {
+        return JSON.parse(fs.readFileSync(file, 'utf8'))
+      } catch {
+        /* try next */
+      }
     }
+    return null
   }
 
   const wrap = (fn) => async (req, res) => {
@@ -125,7 +132,7 @@ export function registerDouyinRoutes(ctx, deps) {
   }
 
   const tasksHandler = wrap(async (req, res, url) => {
-    const rest = String(url.pathname || '').replace(/^\/api\/douyin\/tasks\/?/, '')
+    const rest = String(url.pathname || '').replace(/^\/api\/(?:douyin|shortvideo)\/tasks\/?/, '')
     const parts = rest.split('/').filter(Boolean).map((part) => decodeURIComponent(part))
 
     // 后台 job 已经结束时，把 task.json 里残留的 running 阶段收口，
@@ -282,6 +289,19 @@ export function registerDouyinRoutes(ctx, deps) {
       const task = id ? deps.tasks.readTaskById(home, id) : null
       if (!task) return send(res, 404, { ok: false, error: '没有这个任务' })
       const body = (await readBody(req)) || {}
+      // 「平台官方字幕」只能跑小红书任务
+      if (action === 'transcribe' && String(body.engine || '') === 'official') {
+        const source = String((task.input && task.input.text) || '')
+        const hasXhs = /xiaohongshu\.com|xhslink\.(?:cn|com)/i.test(source)
+        const hasDouyin = /douyin\.com|iesdouyin|aweme\.snssdk/i.test(source)
+        if (!hasXhs || hasDouyin) {
+          return send(res, 400, {
+            ok: false,
+            code: 'engine_platform_mismatch',
+            error: '这个任务不是小红书下的，「平台官方字幕」用不了。请改选其他转写引擎。',
+          })
+        }
+      }
       const allIds = Array.isArray(task.input && task.input.videos) ? task.input.videos : []
       const ids = allIds.length <= 200 ? allIds : []
       const sec =
@@ -500,7 +520,9 @@ export function registerDouyinRoutes(ctx, deps) {
   const routes = [
     // 概览：库统计 + 最近任务 + 登录状态 + 配置
     wrap(async (req, res) => {
-      const out = { ok: true, home, login: readStatus(), jobs: [] }
+      const logins = {}
+      for (const pf of PLATFORMS) logins[pf] = readStatus(pf)
+      const out = { ok: true, home, login: logins.douyin || null, logins, platforms: PLATFORMS, jobs: [] }
       try {
         out.stats = unwrap(await deps.runEngine(config, ['library'], { timeoutMs: 25000 }))
       } catch (error) {
@@ -570,14 +592,17 @@ export function registerDouyinRoutes(ctx, deps) {
     }),
 
     // 只读登录状态（前端高频轮询，不碰引擎）
-    wrap(async (req, res) => {
-      send(res, 200, { ok: true, login: readStatus() })
+    wrap(async (req, res, url) => {
+      const pf = url.searchParams.get('platform') || 'douyin'
+      send(res, 200, { ok: true, platform: pf, login: readStatus(pf) })
     }),
 
     // 登录二维码图片
-    wrap(async (req, res) => {
+    wrap(async (req, res, url) => {
+      const pf = url.searchParams.get('platform') || 'douyin'
+      const file = pf === 'douyin' ? qrPath : qrPathOf(pf)
       try {
-        sendBytes(res, 200, fs.readFileSync(qrPath), 'image/png')
+        sendBytes(res, 200, fs.readFileSync(file), 'image/png')
       } catch {
         sendText(res, 404, '二维码还没生成')
       }
@@ -592,6 +617,18 @@ export function registerDouyinRoutes(ctx, deps) {
       const mode = body.mode === 'full' ? 'full' : 'download'
       const formats = asList(body.formats)
       const engine = body.engine ? String(body.engine) : ''
+      // 平台官方字幕只适用于小红书：输入里没有小红书、或混了抖音，直接拒绝建任务
+      if (engine === 'official') {
+        const hasXhs = /xiaohongshu\.com|xhslink\.(?:cn|com)/i.test(text)
+        const hasDouyin = /douyin\.com|iesdouyin|aweme\.snssdk/i.test(text)
+        if (!hasXhs || hasDouyin) {
+          return send(res, 400, {
+            ok: false,
+            error: '「平台官方字幕」只能用于小红书作品。请改选其他转写引擎（如阿里云百炼 / 本地 SenseVoice），或只粘小红书链接。',
+            code: 'engine_platform_mismatch',
+          })
+        }
+      }
       const input = deps.tasks.parseTargets(text)
       const lines = input.videos.length + input.authors.length + input.unresolved.length
       const title = `${mode === 'full' ? '下载 + 转写 + 导出' : '只下载'}（${lines} 条输入）`
@@ -636,18 +673,24 @@ export function registerDouyinRoutes(ctx, deps) {
     // 开始扫码登录
     wrap(async (req, res) => {
       const body = (await readBody(req)) || {}
+      const pf = String(body.platform || 'douyin')
+      if (!PLATFORMS.includes(pf)) return send(res, 400, { ok: false, error: `不支持的平台：${pf}` })
       const wait = Math.min(900, Math.max(60, Number(body.waitSeconds || 300)))
+      const qr = qrPathOf(pf)
+      const st = statusPathOf(pf)
       try {
-        fs.rmSync(qrPath, { force: true })
+        fs.rmSync(qr, { force: true })
+        fs.rmSync(st, { force: true })
       } catch {
         /* ignore */
       }
+      const label = pf === 'xiaohongshu' ? '等待小红书扫码登录' : '等待抖音扫码登录'
       const job = deps.startJob(
         config,
-        ['login', '--wait', String(wait), '--qr-out', qrPath, '--status-out', statusPath],
-        '等待抖音扫码登录',
+        ['login', '--platform', pf, '--wait', String(wait), '--qr-out', qr, '--status-out', st],
+        label,
       )
-      send(res, 200, { ok: true, job })
+      send(res, 200, { ok: true, platform: pf, job })
     }),
 
     // 单个任务详情（含日志尾巴）
@@ -697,17 +740,17 @@ export function registerDouyinRoutes(ctx, deps) {
   ]
 
   const paths = [
-    '/api/douyin/state',
-    '/api/douyin/llm-models',
-    '/api/douyin/engines',
-    '/api/douyin/videos',
-    '/api/douyin/status',
-    '/api/douyin/qr.png',
-    '/api/douyin/task',
-    '/api/douyin/login',
-    '/api/douyin/job',
-    '/api/douyin/cancel',
-    '/api/douyin/settings',
+    '/api/shortvideo/state',
+    '/api/shortvideo/llm-models',
+    '/api/shortvideo/engines',
+    '/api/shortvideo/videos',
+    '/api/shortvideo/status',
+    '/api/shortvideo/qr.png',
+    '/api/shortvideo/task',
+    '/api/shortvideo/login',
+    '/api/shortvideo/job',
+    '/api/shortvideo/cancel',
+    '/api/shortvideo/settings',
   ]
 
   const disposers = []
@@ -715,27 +758,27 @@ export function registerDouyinRoutes(ctx, deps) {
     try {
       disposers.push(server.register({ kind: 'exact', path: pathname, handler: routes[index] }))
     } catch (error) {
-      ctx.logger?.warn?.(`抖音导出：注册 ${pathname} 失败——${error?.message || error}`)
+      ctx.logger?.warn?.(`短视频导出：注册 ${pathname} 失败——${error?.message || error}`)
     }
   })
-  // 任务中心用前缀路由：/api/douyin/tasks、/api/douyin/tasks/<id>、/…/<id>/transcribe
+  // 任务中心用前缀路由：/api/shortvideo/tasks、/api/shortvideo/tasks/<id>、/…/<id>/transcribe
   try {
     disposers.push(
-      server.register({ kind: 'prefix', path: '/api/douyin/tasks', handler: tasksHandler }),
+      server.register({ kind: 'prefix', path: '/api/shortvideo/tasks', handler: tasksHandler }),
     )
   } catch (error) {
-    ctx.logger?.warn?.(`抖音导出：注册 /api/douyin/tasks 失败——${error?.message || error}`)
+    ctx.logger?.warn?.(`短视频导出：注册 /api/shortvideo/tasks 失败——${error?.message || error}`)
   }
 
   try {
     disposers.push(
-      server.register({ kind: 'prefix', path: '/api/douyin/polish', handler: polishHandler }),
+      server.register({ kind: 'prefix', path: '/api/shortvideo/polish', handler: polishHandler }),
     )
   } catch (error) {
-    ctx.logger?.warn?.(`抖音导出：注册 /api/douyin/polish 失败——${error?.message || error}`)
+    ctx.logger?.warn?.(`短视频导出：注册 /api/shortvideo/polish 失败——${error?.message || error}`)
   }
 
-  ctx.logger?.info?.(`抖音导出：已注册 ${disposers.length} 个 Web 接口`)
+  ctx.logger?.info?.(`短视频导出：已注册 ${disposers.length} 个 Web 接口`)
 
   return () => {
     for (const dispose of disposers) {

@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "Douyin export",
-    "description": "Download watermark-free Douyin videos, transcribe them with local or cloud speech recognition, and export formatted Markdown, TXT, SRT, VTT, JSON, HTML, and DOCX."
+    "title": "ShortVideo Export",
+    "description": "Download watermark-free Douyin and Xiaohongshu videos, transcribe them with local or cloud ASR, and export formatted Markdown, TXT, SRT, VTT, JSON, HTML, and DOCX."
   }
 }

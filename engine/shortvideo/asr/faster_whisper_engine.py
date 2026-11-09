@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import os
 
-from ..util import DyxError, log
+from ..util import ShortVideoError, log
 from . import read_wav_f32
 
 
@@ -26,7 +26,7 @@ class FasterWhisperEngine:
         try:
             from faster_whisper import WhisperModel
         except ImportError as e:
-            raise DyxError("未安装 faster-whisper",
+            raise ShortVideoError("未安装 faster-whisper",
                            code="dep_missing",
                            hint="pip install faster-whisper 'av>=14'") from e
         os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")

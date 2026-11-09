@@ -18,7 +18,7 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
 from .progress import Progress
-from .util import DyxError, log
+from .util import ShortVideoError, log
 
 SYSTEM_PROMPT = (
     "你是中文语音转写稿的校对助手。用户会给你一段由语音识别生成的文字，"
@@ -68,7 +68,7 @@ def _chat(cfg, messages: list[dict]) -> str:
     model = cfg.get("polish.model") or ""
     timeout = float(cfg.get("polish.timeoutSec") or 120)
     if not base or not key:
-        raise DyxError("还没配置 AI 校对模型（polish.baseUrl / polish.apiKey），"
+        raise ShortVideoError("还没配置 AI 校对模型（polish.baseUrl / polish.apiKey），"
                        "到「设置 & 登录」页填一个 chat 模型即可",
                        code="polish_not_configured")
     url = base + "/chat/completions"
@@ -84,7 +84,7 @@ def _chat(cfg, messages: list[dict]) -> str:
                 payload = json.loads(resp.read().decode("utf-8", "replace"))
             choices = payload.get("choices") or []
             if not choices:
-                raise DyxError("校对模型没有返回内容", code="polish_empty")
+                raise ShortVideoError("校对模型没有返回内容", code="polish_empty")
             return ((choices[0].get("message") or {}).get("content") or "").strip()
         except urllib.error.HTTPError as e:
             detail = ""
@@ -102,7 +102,7 @@ def _chat(cfg, messages: list[dict]) -> str:
             last = str(e)
             import time as _t
             _t.sleep(1.5 * (2 ** attempt))
-    raise DyxError(f"校对模型调用失败：{last}", code="polish_failed")
+    raise ShortVideoError(f"校对模型调用失败：{last}", code="polish_failed")
 
 
 _PAIR_QUOTED = re.compile(

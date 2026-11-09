@@ -1,7 +1,7 @@
 // 可选确认卡（DSH action-cards 服务的 Host 侧「kind」）。
 //
 // 用途：删除任务、清空库、覆盖导出这类不可逆操作，先弹一张卡让用户点「确认执行」，
-// 而不是 Agent 直接动手。卡片由 Agent 调 `propose_action` 提出（见 skills/douyin-export/SKILL.md），
+// 而不是 Agent 直接动手。卡片由 Agent 调 `propose_action` 提出（见 skills/shortvideo-export/SKILL.md），
 // 用户点了按钮后 DSH 把决定写进会话日志，并在下一次请求里以状态通知告诉 Agent。
 //
 // 契约见 @deepseek-ai/dsh-action-cards：
@@ -9,8 +9,8 @@
 //   ctx.actionCards.record(agent, decision)
 //   details 只需提供 safeParse(value) -> { success, data } | { success:false, error:{ issues } }
 
-const ACTION = 'douyin.confirm'
-const SKILL = 'douyin-export'
+const ACTION = 'shortvideo.confirm'
+const SKILL = 'shortvideo-export'
 
 const OPS = new Set(['delete-task', 'clear-library', 'overwrite-export', 'publish-video'])
 

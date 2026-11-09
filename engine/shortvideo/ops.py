@@ -4,6 +4,7 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import random
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -12,12 +13,31 @@ from typing import Callable
 from .asr import get_engine, is_fatal_asr_error
 from .aweme import author_record, normalise
 from .browser import BrowserSession, aweme_id_from, sec_uid_from
+
+
+_XHS_ID_RE = re.compile(r"[0-9a-f]{24}")
+
+
+def _author_key(author):
+    """将用户给的作者标识规范化为库里的 sec_uid（抖音）或 24 位 id（小红书）。"""
+    if not author:
+        return None
+    a = str(author).strip()
+    s = sec_uid_from(a)
+    if s:
+        return s
+    if _XHS_ID_RE.fullmatch(a):
+        return a
+    return None
+from .download import download_video_xhs
+from .fetch_xhs import (XhsSession, normalise_note, is_xhs_url, parse_xhs, note_url,
+                        resolve_short, api_available)
 from .diagnose import classify_download
 from .download import download_images, download_video
 from .export import export_one, export_merged
 from .store import Store
 from .progress import Progress
-from .util import DyxError, ffprobe_json, find_ffmpeg, log
+from .util import ShortVideoError, ffprobe_json, find_ffmpeg, log
 
 
 def _progress(cb: Callable[[str], None] | None, msg: str) -> None:
@@ -30,7 +50,7 @@ def _progress(cb: Callable[[str], None] | None, msg: str) -> None:
 def fetch_one(cfg, store: Store, target: str, session: BrowserSession | None = None) -> dict:
     aid = aweme_id_from(target)
     if not aid:
-        raise DyxError(f"无法识别作品 ID: {target}", code="bad_target")
+        raise ShortVideoError(f"无法识别作品 ID: {target}", code="bad_target")
     own = session is None
     if own:
         session = BrowserSession(cfg).__enter__()
@@ -50,7 +70,7 @@ def sync_author(cfg, store: Store, target: str, limit: int | None = None,
                 download: bool = False, cb: Callable[[str], None] | None = None) -> dict:
     sec = sec_uid_from(target) or (target if target.startswith("MS4wLjABAAAA") else None)
     if not sec:
-        raise DyxError(f"无法识别作者主页: {target}", code="bad_target")
+        raise ShortVideoError(f"无法识别作者主页: {target}", code="bad_target")
 
     existing_ids = {v["aweme_id"] for v in store.query_videos(sec_uid=sec, limit=100000)}
     started = time.time()
@@ -101,7 +121,7 @@ def sync_author(cfg, store: Store, target: str, limit: int | None = None,
         "sec_uid": sec,
         "author": author,
         "warning": ("作品列表被登录墙截断，只能取到最新的一页（约 18 条）。"
-                    "运行 dyx_login 扫码登录后再同步即可拿到全量作品。")
+                    "运行 sv_login 扫码登录后再同步即可拿到全量作品。")
         if stop_reason == "login-required" else None,
         "new": len(new_items),
         "stopReason": stop_reason,
@@ -114,6 +134,160 @@ def sync_author(cfg, store: Store, target: str, limit: int | None = None,
         dl = download_many(cfg, store, [r["aweme_id"] for r in new_items], cb=cb)
         result["downloaded"] = dl
     return result
+
+
+# ------------------------------------------------------------------- xiaohongshu
+def _xhs_author(a: dict, uid: str) -> dict:
+    fans = a.get("fans") or ""
+    return {
+        "sec_uid": uid,
+        "uid": uid,
+        "nickname": a.get("nickname") or "",
+        "unique_id": a.get("red_id") or "",
+        "signature": a.get("desc") or "",
+        "avatar": None,
+        "aweme_count": 0,
+        "follower_count": int("".join(ch for ch in str(fans) if ch.isdigit()) or 0)
+                          if "\u4e07" not in str(fans) else int(float(str(fans).replace("\u4e07", "") or 0) * 10000),
+        "total_favorited": 0,
+        "synced_at": None,
+    }
+
+
+def sync_xhs(cfg, store: Store, target: str, limit: int | None = None,
+             incremental: bool = True, stop_after_known: int = 25,
+             download: bool = False, cb: Callable[[str], None] | None = None) -> dict:
+    """小红书作者主页同步（需要登录态；游客只能看到 12 条且翻不动）。"""
+    from .util import LoginRequired
+
+    parsed = parse_xhs(target)
+    if parsed.get("short") and not parsed.get("user_id"):
+        real = resolve_short(parsed["short"])
+        more = parse_xhs(real)
+        parsed = {k: parsed.get(k) or more.get(k) for k in ("user_id", "note_id", "xsec_token", "short")}
+    uid = parsed.get("user_id")
+    if not uid:
+        raise ShortVideoError(f"\u65e0\u6cd5\u8bc6\u522b\u5c0f\u7ea2\u4e66\u4f5c\u8005\uff1a{target}", code="bad_target")
+    tok = parsed.get("xsec_token") or ""
+
+    existing = {v["aweme_id"] for v in store.query_videos(sec_uid=uid, limit=100000)}
+    started = time.time()
+    new_items: list[dict] = []
+    known_streak = 0
+    stop_reason = "completed"
+    author = None
+    prog = Progress("sync", 0, "\u6761", log_every=20)
+    prog.set_phase("\u7ffb\u9875\u4e2d", "\u6b63\u5728\u6253\u5f00\u4f5c\u8005\u4e3b\u9875")
+
+    def _absorb(note) -> bool:
+        """收一条笔记；返回 True 表示该停止翻页。"""
+        nonlocal known_streak, stop_reason
+        rec = normalise_note(note, uid, (author or {}).get("nickname") or "")
+        aid = rec.get("aweme_id")
+        if not aid:
+            return False
+        is_new = aid not in existing
+        store.upsert_video(rec)
+        if is_new:
+            existing.add(aid)
+            new_items.append(rec)
+            known_streak = 0
+        else:
+            known_streak += 1
+        prog.bump(ok=True, note=f"新增 {len(new_items)}", log=f"新增 {len(new_items)}")
+        if limit and len(new_items) >= limit:
+            stop_reason = "limit"
+            return True
+        if incremental and known_streak >= stop_after_known:
+            stop_reason = "no-new-items"
+            return True
+        return False
+
+    # 一、优先走算法签名接口：不开浏览器、不会错位、快一个量级
+    used_api = False
+    if api_available():
+        from .fetch_xhs import XhsApi
+        api = XhsApi(cfg)
+        try:
+            info = api.user_info(uid) or {}
+            if info:
+                author = _xhs_author(info, uid)
+                store.upsert_author(author)
+                _progress(cb, f"作者：{author['nickname']}（{author['unique_id']}）")
+            prog.set_phase("翻页中", "接口模式")
+            for note in api.user_posts(uid, tok, limit=limit):
+                if _absorb(note):
+                    break
+            used_api = True
+        except ShortVideoError as e:
+            if str(getattr(e, "code", "") or "") in ("xhs_captcha", "xhs_blocked", "xhs_needs_token"):
+                log(f"接口模式不通（{e}），改用浏览器翻页")
+            else:
+                raise
+
+    # 二、接口不可用时回落浏览器
+    if not used_api:
+        with XhsSession(cfg) as session:
+            # 不硬挡登录态：游客也能拿到 12 条，只有翻不动时才算需要登录
+            logged = session.is_logged_in()
+            if not logged:
+                log("小红书未登录：本次可能只能取到最新一屏")
+            info = session.author_info(uid, tok)
+            if info:
+                author = _xhs_author(info, uid)
+                store.upsert_author(author)
+                _progress(cb, f"作者：{author['nickname']}（{author['unique_id']}）")
+            for note in session.user_notes(uid, tok, limit=limit):
+                if _absorb(note):
+                    break
+            if getattr(session, "stop_reason", "") == "login-required" and stop_reason == "completed":
+                stop_reason = "login-required"
+    if author:
+        author["aweme_count"] = len(existing)
+        store.upsert_author(author)
+    prog.finish("\u540c\u6b65\u5b8c\u6210" if stop_reason == "completed" else f"\u63d0\u524d\u7ed3\u675f\uff08{stop_reason}\uff09")
+    store.set_author_cursor(uid, None, complete=(stop_reason == "completed"))
+    result = {
+        "platform": "xiaohongshu",
+        "sec_uid": uid,
+        "author": author,
+        "warning": None,
+        "new": len(new_items),
+        "stopReason": stop_reason,
+        "elapsedSec": round(time.time() - started, 1),
+        "items": [{"aweme_id": r["aweme_id"], "desc": (r.get("desc") or "")[:60]} for r in new_items[:50]],
+    }
+    if download and new_items:
+        result["downloaded"] = download_many(cfg, store, [r["aweme_id"] for r in new_items], cb=cb)
+    return result
+
+
+def fetch_note_xhs(cfg, store: Store, target: str, cb: Callable[[str], None] | None = None) -> dict:
+    """单篇小红书笔记：打开页面拿元数据并入库（不下载）。"""
+    parsed = parse_xhs(target)
+    if parsed.get("short") and not parsed.get("note_id"):
+        more = parse_xhs(resolve_short(parsed["short"]))
+        parsed = {k: parsed.get(k) or more.get(k) for k in ("user_id", "note_id", "xsec_token", "short")}
+    nid = parsed.get("note_id")
+    if not nid:
+        raise ShortVideoError(f"\u65e0\u6cd5\u8bc6\u522b\u5c0f\u7ea2\u4e66\u7b14\u8bb0\uff1a{target}", code="bad_target")
+    tok = parsed.get("xsec_token") or ""
+    with XhsSession(cfg) as session:
+        info = session.note_media(nid, tok)
+        if not info.get("mp4") and not info.get("imageList"):
+            raise ShortVideoError("\u9875\u9762\u6ca1\u6709\u62ff\u5230\u89c6\u9891\u6216\u56fe\u7247\uff08\u53ef\u80fd\u9700\u8981\u767b\u5f55\uff09",
+                                  code="no_media")
+        uid = info.get("user_id") or parsed.get("user_id") or ""
+        rec = normalise_note(info, uid, info.get("user") or "")
+        rec["desc"] = rec.get("desc") or info.get("title") or ""
+        # 笔记链接必须带 xsec_token，否则 PC 端打不开
+        rec["share_url"] = note_url(nid, tok)
+        store.upsert_video(rec)
+        if uid and info.get("user"):
+            store.upsert_author(_xhs_author({"nickname": info.get("user"), "fans": ""}, uid))
+    _progress(cb, f"\u5df2\u5165\u5e93 {nid}")
+    return {"platform": "xiaohongshu", "aweme_id": nid, "state": "new",
+            "desc": (rec.get("desc") or "")[:80]}
 
 
 # ------------------------------------------------------------------- targets
@@ -129,6 +303,20 @@ def add_targets(cfg, store: Store, text: str, download: bool = False,
     """
     from .inputs import parse_targets
 
+    result_extra = {}
+    lines = [ln for ln in (text or "").splitlines()]
+    xhs_lines = [ln for ln in lines if is_xhs_url(ln)]
+    if xhs_lines:
+        text = "\n".join(ln for ln in lines if not is_xhs_url(ln))
+        got = []
+        for ln in xhs_lines:
+            try:
+                got.append(sync_xhs(cfg, store, ln, limit=limit_per_author,
+                                    incremental=not full, download=False, cb=cb))
+            except Exception as e:  # noqa: BLE001
+                got.append({"platform": "xiaohongshu", "target": ln, "error": str(e)})
+        result_extra["xhsAuthors"] = got
+
     parsed = parse_targets(text)
     _progress(cb, f"识别到 作者 {len(parsed['authors'])} 个 / 作品 {len(parsed['videos'])} 个"
                   f" / 无法识别 {len(parsed['unknown'])} 行")
@@ -141,6 +329,7 @@ def add_targets(cfg, store: Store, text: str, download: bool = False,
                     "known": 0, "failed": []},
         "download": None,
     }
+    result.update(result_extra)
 
     for sec in parsed["authors"]:
         try:
@@ -243,14 +432,22 @@ def download_many(cfg, store: Store, ids: list[str] | None = None,
         rows = [store.get_video(i) for i in ids]
         rows = [r for r in rows if r]
     else:
-        sec = sec_uid_from(author) if author else None
+        sec = _author_key(author)
         rows = store.pending("download", sec_uid=sec, limit=limit or 200)
     ok, failed, skipped, images_skipped = [], [], [], []
     breaker = int(cfg.get("asr.breakerConsecutive") or 0)
     blocked_streak = 0
+    cooldowns = 0
     pause: dict = {"reason": None, "remaining": 0}
     prog = Progress("download", len(rows), "个")
     prog.set_phase("下载中", f"共 {len(rows)} 个待处理")
+    xhs_session = None
+    xhs_count = 0
+    _xhs_delay = float(cfg.get("fetch.xhsDelaySec") or 9)
+    _raw_burst = cfg.get("fetch.xhsBurst")
+    _xhs_burst = 20 if _raw_burst is None else int(_raw_burst)
+    _xhs_pause = float(cfg.get("fetch.xhsBurstPauseSec") or 22)
+    _xhs_jitter = float(cfg.get("fetch.xhsJitterSec") or 0)
     for row in rows:
         if row.get("status") == "downloaded" and row.get("file_path") and \
                 os.path.exists(row["file_path"]):
@@ -268,10 +465,38 @@ def download_many(cfg, store: Store, ids: list[str] | None = None,
                                        "reason": reason})
                 prog.bump(skipped=True, note="图集", log="图集跳过")
                 continue
-            info = download_video(cfg, row, base_dir=base)
+            if (row.get("platform") or "douyin") == "xiaohongshu":
+                if xhs_session is None:
+                    xhs_session = XhsSession(cfg).__enter__()
+                xhs_count += 1
+                if xhs_count > 1:
+                    time.sleep(_xhs_delay + (random.uniform(0, _xhs_jitter) if _xhs_jitter else 0))
+                if _xhs_burst and xhs_count % _xhs_burst == 0:
+                    _progress(cb, f"  已下 {xhs_count} 条，歇 {int(_xhs_pause)} 秒避风控")
+                    time.sleep(_xhs_pause)
+                try:
+                    info = download_video_xhs(cfg, row, xhs_session, base_dir=base)
+                except Exception as _e:  # noqa: BLE001
+                    _m = str(_e)
+                    if ("has been closed" in _m or "Target page" in _m
+                            or "browser" in _m.lower()):
+                        log("  浏览器会话已失效，重开一个继续")
+                        try:
+                            xhs_session.__exit__()
+                        except Exception:
+                            pass
+                        xhs_session = XhsSession(cfg).__enter__()
+                        info = download_video_xhs(cfg, row, xhs_session, base_dir=base)
+                    else:
+                        raise
+                if info.get("title") and not (row.get("desc") or "").strip():
+                    row["desc"] = info["title"]
+            else:
+                info = download_video(cfg, row, base_dir=base)
             store.mark_downloaded(row["aweme_id"], info["file"], info["size"],
                                   info["audio"], row.get("ratio"),
-                                  info["width"], info["height"])
+                                  info["width"], info["height"],
+                                  info.get("subtitle"))
             ok.append({"aweme_id": row["aweme_id"], "size": info["size"],
                        "resolution": f"{info['width']}x{info['height']}",
                        "seconds": round(info["duration"], 1)})
@@ -285,8 +510,24 @@ def download_many(cfg, store: Store, ids: list[str] | None = None,
             failed.append({"aweme_id": row["aweme_id"], "error": msg})
             prog.bump(failed=True, note=msg[:80], log="失败")
             _progress(cb, f"  ✗ {msg[:160]}")
-            blocked_streak = blocked_streak + 1 if classify_download(msg)[0] == "blocked" else 0
+            blocked_streak = (blocked_streak + 1
+                              if classify_download(msg)[0] in ("blocked", "xhs_captcha")
+                              else 0)
             if breaker and blocked_streak >= breaker:
+                if (row.get("platform") or "douyin") == "xiaohongshu" and cooldowns < 5:
+                    cooldowns += 1
+                    _cool = float(cfg.get("fetch.xhsCooldownSec") or 600)
+                    _progress(cb, f"  风控触发，冷却 {int(_cool/60)} 分钟后自动续跑（第 {cooldowns} 次）")
+                    prog.set_phase("冷却中", f"风控冷却 {int(_cool/60)} 分钟")
+                    time.sleep(_cool)
+                    blocked_streak = 0
+                    try:
+                        store.mark_listed(row["aweme_id"])
+                    except Exception:
+                        pass
+                    failed = [f for f in failed if f["aweme_id"] != row["aweme_id"]]
+                    prog.set_phase("下载中", "冷却结束，继续")
+                    continue
                 pause["reason"] = (f"连续 {blocked_streak} 条被风控拦截，已暂停整轮"
                                    f"（过一会儿或换网络再点重试，剩下的会接着下载）")
                 pause["remaining"] = len(rows) - len(ok) - len(failed) - len(skipped)
@@ -294,6 +535,11 @@ def download_many(cfg, store: Store, ids: list[str] | None = None,
     if pause["reason"]:
         prog.set_phase("已暂停", pause["reason"])
         _progress(cb, "⏸ " + pause["reason"])
+    if xhs_session is not None:
+        try:
+            xhs_session.__exit__(None, None, None)
+        except Exception:
+            pass
     prog.finish()
     out = {"ok": ok, "failed": failed, "skipped": skipped,
            "imagesSkipped": images_skipped,
@@ -329,8 +575,21 @@ def transcribe_many(cfg, store: Store, ids: list[str] | None = None,
         rows = [store.get_video(i) for i in ids]
         rows = [r for r in rows if r]
     else:
-        sec = sec_uid_from(author) if author else None
+        sec = _author_key(author)
         rows = store.pending("transcribe", sec_uid=sec, limit=limit or 2000)
+
+    # 「平台官方字幕」只对小红书有效：平台不匹配就直接拒绝，不要拿抖音视频去试
+    eng_name = (cfg.get("asr.engine") or "sensevoice")
+    if str(eng_name).lower() in ("official", "subtitle", "platform-subtitle"):
+        wrong = [r for r in rows if (r.get("platform") or "douyin") != "xiaohongshu"]
+        if wrong:
+            raise ShortVideoError(
+                f"「平台官方字幕」只能用于小红书作品；"
+                f"这批 {len(rows)} 条里有 {len(wrong)} 条不是小红书的。"
+                f"请改用其他引擎（如 dashscope / sensevoice），"
+                f"或只选小红书作品。",
+                code="engine_platform_mismatch",
+            )
 
     done, failed, skipped, no_speech = [], [], [], []
     prog = Progress("transcribe", len(rows), "条")
@@ -354,6 +613,9 @@ def transcribe_many(cfg, store: Store, ids: list[str] | None = None,
         if force:
             store.mark_no_speech(aid, False)
         wav = row.get("audio_path")
+        if getattr(engine, "needs_audio", True) is False:
+            todo.append((row, wav or ""))
+            continue
         if not wav or not os.path.exists(wav):
             try:
                 _progress(cb, f"{aid}: 需要先下载音轨")
@@ -378,13 +640,29 @@ def transcribe_many(cfg, store: Store, ids: list[str] | None = None,
     prog.set_phase("转写中",
                    f"共 {len(rows)} 条，送 ASR {len(todo)} 条，并行 {workers} 路")
 
+    fallback_engine = _fallback_engine(cfg, engine)
+
     def _run(item):
         row, wav = item
+        lang = cfg.get("asr.language") or "zh"
         t0 = time.time()
         try:
-            res = engine.transcribe(wav, cfg.get("asr.language") or "zh")
+            if getattr(engine, "needs_row", False):
+                res = engine.transcribe(wav, lang, row=row)
+            else:
+                res = engine.transcribe(wav, lang)
             return row, res, time.time() - t0, None
         except Exception as e:  # noqa: BLE001
+            if str(getattr(e, "code", "") or "") == "no_official_subtitle" and fallback_engine is not None:
+                try:
+                    _progress(cb, f"  · {row['aweme_id']} 没有官方字幕，改用 {fallback_engine.name}")
+                    if getattr(fallback_engine, "needs_row", False):
+                        res = fallback_engine.transcribe(wav, lang, row=row)
+                    else:
+                        res = fallback_engine.transcribe(wav, lang)
+                    return row, res, time.time() - t0, None
+                except Exception as e2:  # noqa: BLE001
+                    return row, None, time.time() - t0, e2
             return row, None, time.time() - t0, e
 
     def _finish_one(row, res, seconds, error):
@@ -421,6 +699,12 @@ def transcribe_many(cfg, store: Store, ids: list[str] | None = None,
         if error is None:
             streak["n"] = 0
             _finish_one(row, res, seconds, None)
+            return False
+        if str(getattr(error, "code", "") or "") == "no_official_subtitle":
+            store.mark_skipped(aid, "没有官方字幕")
+            skipped.append({"aweme_id": aid, "reason": "no-subtitle"})
+            prog.bump(skipped=True, note="无官方字幕", log="跳过")
+            _progress(cb, f"  · {aid} 没有官方字幕，跳过")
             return False
         # 先如实记下这一条
         failed.append({"aweme_id": aid, "error": str(error)[:300]})
@@ -469,6 +753,27 @@ def transcribe_many(cfg, store: Store, ids: list[str] | None = None,
         out["pauseReason"] = pause["reason"]
         out["remaining"] = pause["remaining"]
     return out
+
+
+def _fallback_engine(cfg, engine):
+    """官方字幕缺失时的回落引擎（asr.officialFallback）。"""
+    from .asr import get_engine as _get_engine
+
+    if getattr(engine, "name", "") != "official":
+        return None
+    want = (cfg.get("asr.officialFallback") or "").strip()
+    if not want:
+        return None
+    prev = cfg.get("asr.engine")
+    try:
+        cfg.set("asr.engine", want)
+        fb = _get_engine(cfg)
+    except Exception as e:  # noqa: BLE001
+        log(f"回落引擎 {want} 不可用：{e}")
+        fb = None
+    finally:
+        cfg.set("asr.engine", prev)
+    return fb
 
 
 def _dump_transcript(out_dir: str, row: dict, res: dict) -> None:
@@ -545,7 +850,7 @@ def _export_many_impl(cfg, store: Store, ids: list[str] | None = None,
         rows = [store.get_video(i) for i in ids]
         rows = [r for r in rows if r]
     else:
-        sec = sec_uid_from(author) if author else None
+        sec = _author_key(author)
         rows = store.query_videos(sec_uid=sec, limit=limit or 100000)
     written, missing = [], []
     _fixes_cache: dict = {}
@@ -628,7 +933,7 @@ def retry_recoverable(cfg, store: Store, ids: list[str] | None = None,
 
     404（视频已删）、403（内容受限）、图集一律不动——重试也不会成功。
     """
-    sec = sec_uid_from(author) if author else None
+    sec = _author_key(author)
     rows = store.query_videos(sec_uid=sec, status="failed", limit=limit or 500)
     wanted: list[str] = []
     kept: list[dict] = []

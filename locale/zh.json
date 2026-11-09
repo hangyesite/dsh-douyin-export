@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "抖音导出",
-    "description": "下载抖音无水印视频，用本地或云端语音识别转成文字，并排版导出 Markdown、TXT、SRT、VTT、JSON、HTML、DOCX。"
+    "title": "短视频导出",
+    "description": "下载抖音/小红书无水印视频，用本地或云端语音识别转成文字，并排版导出 Markdown、TXT、SRT、VTT、JSON、HTML、DOCX。"
   }
 }

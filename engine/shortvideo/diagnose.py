@@ -19,6 +19,9 @@ DOWNLOAD_RULES = [
     ("http403", re.compile(r"\b403\b|Forbidden", re.I),
      "该视频限制播放（403）",
      "内容受限/地区限制，浏览器里也放不出来。"),
+    ("xhs_captcha", re.compile(r"验证码|captcha|异常访问", re.I),
+     "小红书要求验证码（风控）",
+     "在弹窗浏览器里手动过一次验证码，之后会自动降速继续。"),
     ("blocked", re.compile(r"响应过小|疑似被拦截|拦截", re.I),
      "响应异常，疑似被风控拦截",
      "请求返回的内容不像视频（过小），稍后重试通常可以恢复。"),
@@ -32,7 +35,7 @@ DOWNLOAD_RULES = [
 
 
 # 这些类别「值得抢救」：重试有机会成功；404/403 重试也不会变。
-RETRYABLE_KEYS = ("blocked", "timeout", "disk", "other")
+RETRYABLE_KEYS = ("blocked", "xhs_captcha", "timeout", "disk", "other")
 
 
 def classify_download(error: str | None) -> tuple[str, str, str]:

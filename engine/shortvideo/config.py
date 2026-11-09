@@ -5,19 +5,32 @@ import json
 import os
 from typing import Any
 
-DEFAULT_HOME = os.path.join(os.path.expanduser("~"), ".dsh-douyin")
+DEFAULT_HOME = os.path.join(os.path.expanduser("~"), ".dsh-shortvideo")
+LEGACY_HOME = os.path.join(os.path.expanduser("~"), ".dsh-douyin")
+
+def _migrate_legacy_home(target: str) -> None:
+    """老版本用 ~/.dsh-douyin；升级后自动搬到新目录，避免用户丢库。"""
+    try:
+        if os.path.isdir(target) or not os.path.isdir(LEGACY_HOME):
+            return
+        import shutil
+        shutil.move(LEGACY_HOME, target)
+    except OSError:
+        pass
+
 
 DEFAULTS: dict[str, Any] = {
     # where the library (db, chrome profile, models) lives
     "home": DEFAULT_HOME,
     # where exported media and transcripts go
-    "outputDir": os.path.join(os.path.expanduser("~"), "DouyinExport"),
+    "outputDir": os.path.join(os.path.expanduser("~"), "ShortVideoExport"),
     # browser
     "browser": {
         "channel": "chrome",          # chrome | msedge | chromium
         "headless": False,
             "showWindow": False,            # headless breaks Douyin's anti-bot signing
         "profileDir": "",             # default <home>/chrome-profile
+        "xhsProfileDir": "",          # default <home>/xhs-profile
         "warmup": True,               # visit /hot first to obtain risk-control cookies
         "navTimeoutMs": 60000,
         "settleMs": 9000,
@@ -27,6 +40,8 @@ DEFAULTS: dict[str, Any] = {
         "pageSize": 18,
         "maxScrolls": 400,
         "requestDelayMs": 900,
+            "xhsDelaySec": 9,
+            "xhsBurst": 20,
     },
     # media
     "media": {
@@ -45,6 +60,7 @@ DEFAULTS: dict[str, Any] = {
             # 熔断：同一种错连续这么多条就整体暂停（0 = 关闭）；
             # 账号/余额类错误不等计数，第一条就暂停。
             "breakerConsecutive": 5,
+                "officialFallback": "dashscope",
         "sensevoice": {
             "modelDir": "",           # default <home>/models/sensevoice
             "threads": 4,
@@ -139,33 +155,36 @@ def _deep_merge(base: dict, over: dict) -> dict:
 
 class Config:
     def __init__(self, home: str | None = None):
-        env_home = os.environ.get("DY_DOUYIN_HOME")
+        env_home = os.environ.get("SV_HOME")
         self.home = os.path.abspath(
             os.path.expanduser(home or env_home or DEFAULT_HOME))
+        if not home and not env_home:
+            _migrate_legacy_home(self.home)
         self.path = os.path.join(self.home, "config.json")
         self.data: dict[str, Any] = _deep_merge(DEFAULTS, {})
         self.data["home"] = self.home
         if os.path.exists(self.path):
-            with open(self.path, encoding="utf-8") as f:
+            # utf-8-sig：用户手改/编辑器保存可能带 BOM，不能让整个插件起不来
+            with open(self.path, encoding="utf-8-sig") as f:
                 self.data = _deep_merge(self.data, json.load(f))
         self._apply_env()
         self._normalize()
 
     def _apply_env(self) -> None:
-        if os.environ.get("DY_DOUYIN_OUTPUT"):
-            self.data["outputDir"] = os.environ["DY_DOUYIN_OUTPUT"]
-        if os.environ.get("DY_OPENAI_BASE"):
-            self.data["asr"]["openai"]["baseUrl"] = os.environ["DY_OPENAI_BASE"]
-        if os.environ.get("DY_OPENAI_KEY"):
-            self.data["asr"]["openai"]["apiKey"] = os.environ["DY_OPENAI_KEY"]
-        if os.environ.get("DY_OPENAI_MODEL"):
-            self.data["asr"]["openai"]["model"] = os.environ["DY_OPENAI_MODEL"]
-        if os.environ.get("DY_DASHSCOPE_KEY"):
-            self.data["asr"]["dashscope"]["apiKey"] = os.environ["DY_DASHSCOPE_KEY"]
+        if os.environ.get("SV_OUTPUT"):
+            self.data["outputDir"] = os.environ["SV_OUTPUT"]
+        if os.environ.get("SV_OPENAI_BASE"):
+            self.data["asr"]["openai"]["baseUrl"] = os.environ["SV_OPENAI_BASE"]
+        if os.environ.get("SV_OPENAI_KEY"):
+            self.data["asr"]["openai"]["apiKey"] = os.environ["SV_OPENAI_KEY"]
+        if os.environ.get("SV_OPENAI_MODEL"):
+            self.data["asr"]["openai"]["model"] = os.environ["SV_OPENAI_MODEL"]
+        if os.environ.get("SV_DASHSCOPE_KEY"):
+            self.data["asr"]["dashscope"]["apiKey"] = os.environ["SV_DASHSCOPE_KEY"]
         if os.environ.get("DASHSCOPE_API_KEY"):
             self.data["asr"]["dashscope"]["apiKey"] = os.environ["DASHSCOPE_API_KEY"]
-        if os.environ.get("DY_VOLC_KEY"):
-            self.data["asr"]["volc"]["apiKey"] = os.environ["DY_VOLC_KEY"]
+        if os.environ.get("SV_VOLC_KEY"):
+            self.data["asr"]["volc"]["apiKey"] = os.environ["SV_VOLC_KEY"]
         if os.environ.get("VOLCENGINE_ACCESS_KEY_ID"):
             self.data["asr"]["volc"]["accessKeyId"] = os.environ["VOLCENGINE_ACCESS_KEY_ID"]
         if os.environ.get("VOLCENGINE_SECRET_ACCESS_KEY"):

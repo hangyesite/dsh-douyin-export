@@ -25,7 +25,7 @@ import uuid
 from datetime import datetime, timezone
 from urllib.parse import quote, urlparse
 
-from ..util import DyxError, log
+from ..util import ShortVideoError, log
 
 API_BASE = "https://openspeech.bytedance.com/api/v3/auc/bigmodel"
 
@@ -103,7 +103,7 @@ class TOSUploader:
         return f"https://{self.bucket}.tos-{self.region}.volces.com/{key}"
 
     def upload(self, path: str, fmt: str) -> str:
-        key = f"dyx-asr/{uuid.uuid4()}.{fmt}"
+        key = f"shortvideo-asr/{uuid.uuid4()}.{fmt}"
         raw = self._url(key)
         put_url = presign_tos("PUT", raw, self.ak, self.sk, self.region, expires=600)
         size = os.path.getsize(path)
@@ -115,15 +115,15 @@ class TOSUploader:
             try:
                 with urllib.request.urlopen(req, timeout=300) as r:
                     if r.status not in (200, 201):
-                        raise DyxError(f"TOS 上传失败 HTTP {r.status}", code="tos_upload_failed")
+                        raise ShortVideoError(f"TOS 上传失败 HTTP {r.status}", code="tos_upload_failed")
             except urllib.error.HTTPError as e:
                 body = e.read().decode("utf-8", "replace")[:300]
-                raise DyxError(f"TOS 上传失败 HTTP {e.code}: {body}",
+                raise ShortVideoError(f"TOS 上传失败 HTTP {e.code}: {body}",
                                code="tos_upload_failed",
                                hint="检查 asr.volc.tosBucket / tosRegion / accessKeyId / "
                                     "secretAccessKey，以及桶策略是否允许该 AK 写对象。") from e
             except Exception as e:  # noqa: BLE001
-                raise DyxError(f"TOS 上传失败: {e}", code="tos_upload_failed") from e
+                raise ShortVideoError(f"TOS 上传失败: {e}", code="tos_upload_failed") from e
         log(f"  已上传 {size / 1048576:.1f} MB 到 TOS（{key}）")
         return presign_tos("GET", raw, self.ak, self.sk, self.region, expires=3600)
 
@@ -136,7 +136,7 @@ class VolcEngine:
     def __init__(self, cfg):
         self.cfg = cfg
         v = (cfg.get("asr.volc") or {})
-        self.key = v.get("apiKey") or os.environ.get("DY_VOLC_KEY") or ""
+        self.key = v.get("apiKey") or os.environ.get("SV_VOLC_KEY") or ""
         self.tier = (v.get("tier") or "express").lower()
         self.speakers = bool(v.get("speakers", False))
         self.timeout = int(v.get("timeoutSec") or 900)
@@ -150,12 +150,12 @@ class VolcEngine:
         self.sk = (v.get("secretAccessKey")
                    or os.environ.get("VOLCENGINE_SECRET_ACCESS_KEY") or "")
         if not self.key:
-            raise DyxError(
+            raise ShortVideoError(
                 "未配置豆包（火山）语音识别的 API Key", code="asr_unconfigured",
                 hint="到 https://console.volcengine.com/speech/new/ 创建应用并复制 API Key，"
-                     "然后运行：dyx_settings set asr.volc.apiKey <你的key>")
+                     "然后运行：sv_settings set asr.volc.apiKey <你的key>")
         if self.tier not in TIERS:
-            raise DyxError(f"未知豆包档位: {self.tier}", code="bad_engine",
+            raise ShortVideoError(f"未知豆包档位: {self.tier}", code="bad_engine",
                            hint="可选：express / standard / offpeak")
 
     # ------------------------------------------------------------ audio
@@ -166,11 +166,11 @@ class VolcEngine:
         if self.bucket and self.ak and self.sk:
             up = TOSUploader(self.bucket, self.region, self.ak, self.sk)
             return up.upload(wav_path, fmt), fmt
-        raise DyxError(
+        raise ShortVideoError(
             "豆包录音文件识别只接受公网 URL，本机音频无法直接提交", code="asr_needs_url",
-            hint="二选一：① dyx_settings set asr.volc.tosBucket <桶名> 并配好 "
+            hint="二选一：① sv_settings set asr.volc.tosBucket <桶名> 并配好 "
                  "accessKeyId / secretAccessKey（引擎会自动直传）；"
-                 "② 自己上传后 dyx_settings set asr.volc.audioUrl <公网地址>")
+                 "② 自己上传后 sv_settings set asr.volc.audioUrl <公网地址>")
 
     # ------------------------------------------------------------ HTTP
     def _headers(self, request_id: str, tier: dict, sequence: bool) -> dict:
@@ -198,11 +198,11 @@ class VolcEngine:
             message = e.headers.get("X-Api-Message", "") or e.read().decode("utf-8", "replace")[:300]
             self._raise(status or str(e.code), message)
         except Exception as e:  # noqa: BLE001
-            raise DyxError(f"豆包 ASR 请求失败: {e}", code="asr_call_failed") from e
+            raise ShortVideoError(f"豆包 ASR 请求失败: {e}", code="asr_call_failed") from e
 
     def _raise(self, status: str, message: str):
         hint = ERR_HINTS.get(status, "")
-        raise DyxError(f"豆包 ASR 返回 {status}: {message}", code="asr_http_error",
+        raise ShortVideoError(f"豆包 ASR 返回 {status}: {message}", code="asr_http_error",
                        hint=hint or None)
 
     def _body(self, audio_url: str, fmt: str) -> dict:
@@ -256,7 +256,7 @@ class VolcEngine:
             if status == SILENT:
                 return {"result": {"text": "", "utterances": []}}
             self._raise(status, msg)
-        raise DyxError(f"豆包转写超时（{self.timeout}s）", code="asr_timeout")
+        raise ShortVideoError(f"豆包转写超时（{self.timeout}s）", code="asr_timeout")
 
     # ------------------------------------------------------------ contract
     def transcribe(self, wav_path: str, language: str = "zh") -> dict:

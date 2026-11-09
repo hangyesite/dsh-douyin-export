@@ -6,7 +6,7 @@ from typing import Protocol
 
 import numpy as np
 
-from ..util import DyxError
+from ..util import ShortVideoError
 
 
 class ASREngine(Protocol):
@@ -20,7 +20,7 @@ class ASREngine(Protocol):
 def read_wav_f32(path: str) -> tuple[np.ndarray, int]:
     with wave.open(path, "rb") as w:
         if w.getsampwidth() != 2:
-            raise DyxError("音频必须是 16-bit PCM", code="bad_wav")
+            raise ShortVideoError("音频必须是 16-bit PCM", code="bad_wav")
         sr = w.getframerate()
         channels = w.getnchannels()
         raw = w.readframes(w.getnframes())
@@ -87,8 +87,11 @@ def get_engine(cfg):
     if kind in ("volc", "doubao", "volcengine"):
         from .volc import VolcEngine
         return VolcEngine(cfg)
+    if kind in ("official", "subtitle", "platform-subtitle"):
+        from .official import OfficialEngine
+        return OfficialEngine(cfg)
     from .. import catalog
-    raise DyxError(f"未知 ASR 引擎: {kind}", code="bad_engine",
+    raise ShortVideoError(f"未知 ASR 引擎: {kind}", code="bad_engine",
                    hint="可选：" + " / ".join(catalog.BY_ID))
 
 
