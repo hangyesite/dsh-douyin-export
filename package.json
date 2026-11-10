@@ -1,7 +1,6 @@
 {
   "name": "dsh-shortvideo-export",
   "version": "0.1.4",
-  "private": true,
   "type": "module",
   "description": "Download watermark-free Douyin and Xiaohongshu videos, transcribe them with local or cloud ASR, proofread the transcript with AI terms, and export Markdown/TXT/SRT/VTT/JSON/HTML/DOCX.",
   "license": "MIT",
@@ -63,5 +62,11 @@
         "@deepseek-ai/dsh-client-ui-settings"
       ]
     }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }
