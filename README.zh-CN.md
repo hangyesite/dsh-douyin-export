@@ -1,6 +1,6 @@
 # 短视频导出（DSH 插件）
 
-下载抖音无水印视频，用本地或云端语音识别转成文字，可选用对话模型做同音字校对，再排版导出 Markdown、TXT、SRT、VTT、JSON、HTML、DOCX —— 可以一条一个文件，也可以合并成一个合集。
+下载抖音、小红书无水印视频，用本地或云端语音识别转成文字，可选用对话模型做同音字校对，再排版导出 Markdown、TXT、SRT、VTT、JSON、HTML、DOCX —— 可以一条一个文件，也可以合并成一个合集。
 
 以 DSH 插件形态提供：注册 12 个 Agent 工具、一个技能、一张确认动作卡、一个定时增量入口，以及带任务进度的 Web 面板；重活由随包分发的 Python 引擎执行。
 
@@ -12,7 +12,7 @@
 - **校对** —— 可选。对话模型先从样本里挖出「错→对」术语表，你确认哪些是真的，再由本地做确定性替换；不重写正文、不动时间戳。支持「只改这一处」（`错=>对 || 原句`），处理只有个别句子听错的同音字。
 - **导出** —— Markdown 带 YAML front-matter，另有 TXT / SRT / VTT / JSON / HTML / DOCX；可选合并合集（MD/TXT/HTML/DOCX），默认最新在前。
 - **任务** —— 每次运行独立目录（`video/`、`audio/`、`transcript/`、`export/<格式>/`、`export/合集/`），带阶段表（下载 / 转写 / 导出）和实时进度快照。
-- **面板** —— 左栏图标 + 设置分区两个入口，五个页签：新建任务 / 任务 / 资料库 / 校对 / **登录** / 设置。
+- **面板** —— 左栏图标 + 设置分区两个入口，六个页签：新建任务 / 任务 / 资料库 / 校对 / **登录** / 设置。
 - **登录页** —— 每个平台一张卡片（当前：抖音、小红书），各自显示登录态与二维码；以后加平台只需在 `PLATFORMS` 里加一项。
 
 ## 运行条件
@@ -22,20 +22,25 @@
 | DSH | 使用 `ctx.tools`、`ctx.slots`、`ctx.skills`、`actionCards`、`schedule` |
 | Python | 3.10+，命令行里的 `python`（或用 `SV_PYTHON` / `python` 配置项指定） |
 | ffmpeg | `ffmpeg` 与 `ffprobe` 在 PATH 里，或设置 `media.ffmpegPath` |
-| 浏览器 | 系统 Chrome 或 Edge（由 Playwright 驱动取抖音元数据） |
+| 浏览器 | 系统 Chrome 或 Edge（Playwright 驱动：抖音取元数据、小红书读笔记页里的视频地址） |
 | 云端密钥 | 仅当你选云端引擎时需要；本地 SenseVoice 不需要账号 |
+
+一句话版前置：**Python 3.10+**（`playwright`、`numpy`、`python-docx`，用本地 SenseVoice 再加 `sherpa-onnx`）、**`ffmpeg`/`ffprobe` 在 PATH**、**系统 Chrome 或 Edge**；首次用本地引擎会下载约 228 MB 模型。
 
 Python 依赖不打进包里，按需安装：
 
 ```sh
-python -m pip install playwright sherpa-onnx faster-whisper python-docx
+python -m pip install playwright numpy python-docx
+# 可选：按你实际要用的本地引擎再装其一
+python -m pip install sherpa-onnx        # 默认本地引擎 SenseVoice
+python -m pip install faster-whisper     # 备选本地引擎
 python -m playwright install chromium   # 已有 Chrome/Edge 可跳过
 ```
 
 ## 安装
 
 ```sh
-dsh plugin add https://github.com/<owner>/shortvideo-export
+dsh plugin add https://github.com/hangyesite/dsh-shortvideo-export
 ```
 
 或用本地目录：DSH 插件管理 → 安装 bundle → 指向本目录。

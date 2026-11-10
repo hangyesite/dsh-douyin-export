@@ -1,6 +1,6 @@
-# Douyin Export — DSH plugin
+# ShortVideo Export — DSH plugin
 
-Download watermark-free Douyin (抖音) videos, transcribe them with local or cloud speech recognition, proofread the text with a chat model, and export a formatted transcript in Markdown, TXT, SRT, VTT, JSON, HTML or DOCX — one file per video, or one merged collection.
+Download watermark-free Douyin (抖音) and Xiaohongshu (小红书) videos, transcribe them with local or cloud speech recognition, proofread the text with a chat model, and export a formatted transcript in Markdown, TXT, SRT, VTT, JSON, HTML or DOCX — one file per video, or one merged collection.
 
 Built as a DSH plugin: it registers agent tools, a Skill, a confirmation action card, a scheduled-sync entry and a web panel with per-task progress. The heavy lifting runs in a bundled Python engine.
 
@@ -8,7 +8,7 @@ Built as a DSH plugin: it registers agent tools, a Skill, a confirmation action 
 
 - **Fetch** — paste a video link, a video ID, a share text, a profile link or a raw `sec_uid`. Authors sync incrementally: the sync stops as soon as it reaches videos it already has.
 - **Download** — saves the watermark-free MP4 (highest bitrate variant available) with ffprobe verification, then extracts a 16 kHz mono WAV for transcription.
-- **Transcribe** — five interchangeable engines (two local, three cloud). Per-video or batched, with per-task progress, pause-on-account-error circuit breaking, and "no speech" detection so silent videos are skipped instead of failing.
+- **Transcribe** — six interchangeable engines (two local, three cloud, plus Xiaohongshu's own subtitle track when a note carries one). Per-video or batched, with per-task progress, pause-on-account-error circuit breaking, and "no speech" detection so silent videos are skipped instead of failing.
 - **Proofread** — an optional chat model mines a `wrong → right` term table from a sample, you accept what is real, and the replacement is applied deterministically. Nothing is rewritten, timestamps are untouched. Per-occurrence fixes (`wrong => right || the sentence`) resolve homophones that only one sentence gets wrong.
 - **Export** — Markdown with YAML front-matter, plus TXT / SRT / VTT / JSON / HTML / DOCX. Optional merged collection (MD/TXT/HTML/DOCX), newest first.
 - **Tasks** — every run gets its own directory (`video/`, `audio/`, `transcript/`, `export/<format>/`, `export/合集/`), a stage table (download / transcribe / export) and a live progress snapshot.
@@ -22,27 +22,32 @@ Built as a DSH plugin: it registers agent tools, a Skill, a confirmation action 
 | DSH | any recent build; the plugin uses `ctx.tools`, `ctx.slots`, `ctx.skills`, `actionCards` and `schedule` |
 | Python | 3.10+ on `PATH` as `python` (or set `SV_PYTHON` / the `python` config key) |
 | ffmpeg | `ffmpeg` + `ffprobe` on `PATH`, or set `media.ffmpegPath` |
-| Browser | system Chrome or Edge — the plugin drives it with Playwright for Douyin metadata |
+| Browser | system Chrome or Edge — driven by Playwright: Douyin metadata, and the video address inside a Xiaohongshu note page |
 | Cloud keys | only if you pick a cloud engine; local SenseVoice needs no account |
+
+In one line: **Python 3.10+** (`playwright`, `numpy`, `python-docx`, plus `sherpa-onnx` for the default local engine), **`ffmpeg`/`ffprobe` on PATH**, and **system Chrome or Edge**; the first local run downloads a ~228 MB model.
 
 Python packages are installed on first use of an engine and are **not** bundled:
 
 ```sh
-python -m pip install playwright sherpa-onnx faster-whisper python-docx
+python -m pip install playwright numpy python-docx
+# optional, per local engine you actually use
+python -m pip install sherpa-onnx        # default local engine (SenseVoice)
+python -m pip install faster-whisper     # alternative local engine
 python -m playwright install chromium   # only if you have no Chrome/Edge
 ```
 
 ## Install
 
 ```sh
-dsh plugin add https://github.com/<owner>/shortvideo-export
+dsh plugin add https://github.com/hangyesite/dsh-shortvideo-export
 ```
 
 Or from a local checkout, in DSH: Plugin Manager → install bundle → point at this directory.
 
 ## First run
 
-1. Open **Settings & Login** → *Warm up / Login* if you want the browser cookie set ready. Scanning the QR code once is enough; the profile persists, but **most downloads work without any login**.
+1. Open the **Login** tab and scan the QR code once per platform (Douyin, Xiaohongshu) if you want a signed-in session. The profile persists afterwards, and **most Douyin downloads work without any login**.
 2. Local transcription needs a model: Settings → *Download model* (SenseVoice `int8`, ~228 MB) — or set `asr.sensevoice.modelDir` to an existing directory.
 3. Paste a link into **Tasks → New task** and pick what to do (download only, or download + transcribe + export).
 
