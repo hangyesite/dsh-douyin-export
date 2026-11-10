@@ -45,7 +45,12 @@
     "README.zh-CN.md",
     "CHANGELOG.md",
     "LICENSE",
-    "assets/icon-512.png"
+    "assets/icon-512.png",
+    "screenshots.json",
+    "assets/screenshots/01-new-task.png",
+    "assets/screenshots/02-tasks.png",
+    "assets/screenshots/04-login.png",
+    "assets/screenshots/05-settings.png"
   ],
   "scripts": {
     "test": "node scripts/selfcheck.mjs"
