@@ -1,6 +1,15 @@
 # 变更记录
 
-## 未发布（Unreleased）
+## 0.1.5 — 2026-11-10
+
+### 构建与发布
+- 新增 `.github/workflows/publish.yml`：推 `v*` tag 即自动校验版本号、跑 selfcheck、发布到 npm（带 provenance）并生成 GitHub Release。优先走 npm Trusted Publishing（OIDC），未配置时回落到 `NPM_TOKEN` secret。
+- 支持手动触发（`workflow_dispatch`，默认 dry-run），便于验证发布链路而不真正发版。
+
+### 插件市场
+- 新增 512×512 图标 `assets/icon-512.png`（由 `icon.svg` 渲染），市场条目已声明 `icon:`。
+- 新增 4 张面板截图与 `screenshots.json`（新建任务 / 任务 / 登录 / 设置），市场详情页隔夜构建自动读取。
+
 
 ### 文档
 - 读文件前置按市场条目口径补齐：`numpy` 写进依赖清单，本地引擎由“一次装全”改为“按需装”，并加一句话版前置清单（Python 3.10+ / ffmpeg / Chrome 或 Edge / 228 MB 模型）。
